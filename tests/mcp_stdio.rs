@@ -147,6 +147,7 @@ fn stdio_end_to_end_mcp_flow() {
         .collect();
     assert!(tool_names.contains(&"create_task"));
     assert!(tool_names.contains(&"list_tasks"));
+    assert!(tool_names.contains(&"set_status"));
 
     let create_list = client.request(
         3,
@@ -198,23 +199,46 @@ fn stdio_end_to_end_mcp_flow() {
         .expect("list_tasks array");
     assert_eq!(tasks.len(), 1);
 
-    let get_task = client.request(
+    let set_status = client.request(
         6,
         "tools/call",
         json!({
+            "name": "set_status",
+            "arguments": {
+                "id": task_id,
+                "status": "done"
+            }
+        }),
+    );
+    assert_eq!(
+        structured_content(&set_status)
+            .get("status")
+            .and_then(Value::as_str),
+        Some("done")
+    );
+
+    let get_task = client.request(
+        7,
+        "tools/call",
+        json!({
             "name": "get_task",
-            "arguments": {"id": task_id}
+            "arguments": {
+                "id": structured_content(&create_task)
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .expect("created id")
+            }
         }),
     );
     assert_eq!(
         structured_content(&get_task)
             .get("frontmatter")
-            .and_then(|v| v.get("title"))
+            .and_then(|v| v.get("status"))
             .and_then(Value::as_str),
-        Some("Request environment access")
+        Some("done")
     );
 
-    let shutdown = client.request(7, "shutdown", json!({}));
+    let shutdown = client.request(8, "shutdown", json!({}));
     assert!(shutdown.get("result").is_some());
 
     let deliverables_dir = root.path().join("project-alpha").join("deliverables");

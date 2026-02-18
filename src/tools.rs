@@ -5,8 +5,8 @@ use serde_json::{Value, json};
 use crate::error::{Result, TaskMcpError};
 use crate::operations::task_ops::{
     CreateTaskInput, DeleteTaskInput, ListTasksInput, RelationshipInput, SearchTasksInput,
-    TaskLocator, UpdateTaskInput, add_deliverable, create_task, delete_task, get_task, list_tasks,
-    remove_deliverable, search_tasks,
+    SetStatusInput, TaskLocator, UpdateTaskInput, add_deliverable, create_task, delete_task,
+    get_task, list_tasks, remove_deliverable, search_tasks, set_status,
 };
 use crate::server::McpServer;
 
@@ -70,6 +70,19 @@ pub fn tool_definitions() -> Vec<Value> {
                     "patch": {"type":"object"}
                 },
                 "required": ["patch"]
+            }
+        }),
+        json!({
+            "name": "set_status",
+            "description": "Set task status directly. Valid statuses: todo, doing, blocked, done, canceled.",
+            "inputSchema": {
+                "type":"object",
+                "properties": {
+                    "id": {"type":"string"},
+                    "path": {"type":"string"},
+                    "status": {"type":"string","enum":["todo","doing","blocked","done","canceled"]}
+                },
+                "required": ["status"]
             }
         }),
         json!({
@@ -162,6 +175,10 @@ pub async fn call_tool(server: &McpServer, name: &str, arguments: Value) -> Resu
         "update_task" => {
             let input: UpdateTaskInput = serde_json::from_value(arguments)?;
             crate::operations::task_ops::update_task(server.storage(), input).await
+        }
+        "set_status" => {
+            let input: SetStatusInput = serde_json::from_value(arguments)?;
+            set_status(server.storage(), input).await
         }
         "delete_task" => {
             let input: DeleteTaskInput = serde_json::from_value(arguments)?;

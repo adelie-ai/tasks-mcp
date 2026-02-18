@@ -59,6 +59,13 @@ pub struct DeleteTaskInput {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+pub struct SetStatusInput {
+    #[serde(flatten)]
+    pub locator: TaskLocator,
+    pub status: TaskStatus,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct ListTasksInput {
     #[serde(default)]
     pub list: Option<String>,
@@ -166,6 +173,35 @@ pub async fn delete_task(storage: &Storage, input: DeleteTaskInput) -> Result<Va
     let path = locate_task_path(storage, &input.locator).await?;
     fs::remove_file(&path).await?;
     Ok(json!({"deleted": true, "path": path.to_string_lossy()}))
+}
+
+pub async fn set_status(storage: &Storage, input: SetStatusInput) -> Result<Value> {
+    let path = locate_task_path(storage, &input.locator).await?;
+    let mut document = read_task_from_path(&path).await?;
+
+    document.frontmatter.status = input.status;
+    document.frontmatter.updated = now_iso8601();
+    validate_frontmatter(&document.frontmatter)?;
+
+    let new_path = storage.task_file_path(
+        &document.frontmatter.list,
+        document.frontmatter.task_type,
+        &document.frontmatter.id,
+        &document.frontmatter.title,
+    );
+
+    let markdown = render_task_markdown(&document.frontmatter, &document.body)?;
+    storage.atomic_write(&new_path, &markdown).await?;
+
+    if new_path != path && path.exists() {
+        fs::remove_file(path).await?;
+    }
+
+    Ok(json!({
+        "id": document.frontmatter.id,
+        "path": new_path.to_string_lossy(),
+        "status": input.status,
+    }))
 }
 
 pub async fn list_tasks(storage: &Storage, input: ListTasksInput) -> Result<Value> {

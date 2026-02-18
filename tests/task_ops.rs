@@ -2,9 +2,9 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use tasks_mcp::operations::task_ops::{
-    CreateTaskInput, ListTasksInput, RelationshipInput, SearchTasksInput, TaskLocator,
-    UpdateTaskInput, add_deliverable, create_task, get_task, list_tasks, remove_deliverable,
-    search_tasks, update_task,
+    CreateTaskInput, ListTasksInput, RelationshipInput, SearchTasksInput, SetStatusInput,
+    TaskLocator, UpdateTaskInput, add_deliverable, create_task, get_task, list_tasks,
+    remove_deliverable, search_tasks, set_status, update_task,
 };
 use tasks_mcp::storage::Storage;
 
@@ -309,4 +309,70 @@ async fn list_tasks_supports_cross_list_and_subset_filtering() {
     .await
     .expect("search global");
     assert_eq!(searched_global.as_array().map(Vec::len), Some(2));
+}
+
+#[tokio::test]
+async fn set_status_marks_task_done() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(
+        &storage,
+        CreateTaskInput {
+            list: "project-alpha".to_string(),
+            task_type: tasks_mcp::model::TaskType::Deliverable,
+            title: "Finish onboarding docs".to_string(),
+            status: Some(tasks_mcp::model::TaskStatus::Todo),
+            epic_id: None,
+            deliverable_ids: None,
+            tags: None,
+            priority: None,
+            due: None,
+            links: None,
+            assignee: None,
+            body: Some("Initial draft".to_string()),
+        },
+    )
+    .await
+    .expect("create task");
+
+    let id = created
+        .get("id")
+        .and_then(|value| value.as_str())
+        .expect("id present")
+        .to_string();
+
+    let status_result = set_status(
+        &storage,
+        SetStatusInput {
+            locator: TaskLocator {
+                id: Some(id.clone()),
+                path: None,
+            },
+            status: tasks_mcp::model::TaskStatus::Done,
+        },
+    )
+    .await
+    .expect("set status");
+    assert_eq!(
+        status_result.get("status").and_then(|value| value.as_str()),
+        Some("done")
+    );
+
+    let fetched = get_task(
+        &storage,
+        TaskLocator {
+            id: Some(id),
+            path: None,
+        },
+    )
+    .await
+    .expect("get task");
+
+    assert_eq!(
+        fetched
+            .get("frontmatter")
+            .and_then(|value| value.get("status"))
+            .and_then(|value| value.as_str()),
+        Some("done")
+    );
 }

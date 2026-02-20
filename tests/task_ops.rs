@@ -2,9 +2,10 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use tasks_mcp::operations::task_ops::{
-    CreateTaskInput, ListTasksInput, RelationshipInput, SearchTasksInput, SetStatusInput,
-    TaskLocator, UpdateTaskInput, add_deliverable, create_task, get_task, list_tasks,
-    remove_deliverable, search_tasks, set_status, update_task,
+    AddExternalRefInput, AppendTaskNoteInput, CreateTaskInput, ListTasksInput, RelationshipInput,
+    RepairStrategy, RepairTaskFrontmatterInput, SearchTasksInput, SetStatusInput, TaskLocator,
+    UpdateTaskInput, add_deliverable, add_external_ref, append_task_note, create_task, get_task,
+    list_tasks, remove_deliverable, repair_task_frontmatter, search_tasks, set_status, update_task,
 };
 use tasks_mcp::storage::Storage;
 
@@ -141,6 +142,7 @@ async fn list_search_and_relationships_work() {
             status: None,
             tag: Some("access".to_string()),
             epic_id: Some(epic_id.clone()),
+            assignee: None,
         },
     )
     .await
@@ -254,6 +256,7 @@ async fn list_tasks_supports_cross_list_and_subset_filtering() {
             status: Some(tasks_mcp::model::TaskStatus::Todo),
             tag: Some("shared".to_string()),
             epic_id: None,
+            assignee: None,
         },
     )
     .await
@@ -269,6 +272,7 @@ async fn list_tasks_supports_cross_list_and_subset_filtering() {
             status: Some(tasks_mcp::model::TaskStatus::Todo),
             tag: Some("shared".to_string()),
             epic_id: None,
+            assignee: None,
         },
     )
     .await
@@ -375,4 +379,335 @@ async fn set_status_marks_task_done() {
             .and_then(|value| value.as_str()),
         Some("done")
     );
+}
+
+fn make_task(list: &str) -> CreateTaskInput {
+    CreateTaskInput {
+        list: list.to_string(),
+        task_type: tasks_mcp::model::TaskType::Deliverable,
+        title: "Test task".to_string(),
+        status: Some(tasks_mcp::model::TaskStatus::Todo),
+        epic_id: None,
+        deliverable_ids: None,
+        tags: None,
+        priority: None,
+        due: None,
+        links: None,
+        assignee: None,
+        body: Some("Initial body.".to_string()),
+    }
+}
+
+#[tokio::test]
+async fn append_task_note_adds_to_body_without_touching_frontmatter() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    append_task_note(
+        &storage,
+        AppendTaskNoteInput {
+            locator: TaskLocator { id: Some(id.clone()), path: None },
+            note: "Ticket confirmed".to_string(),
+            section: None,
+            timestamp: Some(false),
+        },
+    )
+    .await
+    .expect("append note");
+
+    let fetched = get_task(&storage, TaskLocator { id: Some(id), path: None })
+        .await
+        .expect("get task");
+
+    let body = fetched["body"].as_str().expect("body");
+    assert!(body.contains("Initial body."), "original body preserved");
+    assert!(body.contains("Ticket confirmed"), "note appended");
+
+    // Frontmatter must still round-trip cleanly.
+    assert_eq!(fetched["frontmatter"]["status"].as_str(), Some("todo"));
+}
+
+#[tokio::test]
+async fn append_task_note_creates_section_if_absent() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    append_task_note(
+        &storage,
+        AppendTaskNoteInput {
+            locator: TaskLocator { id: Some(id.clone()), path: None },
+            note: "Access granted".to_string(),
+            section: Some("Notes".to_string()),
+            timestamp: Some(false),
+        },
+    )
+    .await
+    .expect("append note under section");
+
+    let fetched = get_task(&storage, TaskLocator { id: Some(id), path: None })
+        .await
+        .expect("get task");
+
+    let body = fetched["body"].as_str().expect("body");
+    assert!(body.contains("## Notes"), "heading created");
+    assert!(body.contains("Access granted"), "note under heading");
+}
+
+#[tokio::test]
+async fn append_task_note_inserts_under_existing_section() {
+    let (_dir, storage) = test_storage();
+
+    let mut input = make_task("ops");
+    input.body = Some("## Notes\nFirst note.\n\n## Other".to_string());
+    let created = create_task(&storage, input).await.expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    append_task_note(
+        &storage,
+        AppendTaskNoteInput {
+            locator: TaskLocator { id: Some(id.clone()), path: None },
+            note: "Second note.".to_string(),
+            section: Some("Notes".to_string()),
+            timestamp: Some(false),
+        },
+    )
+    .await
+    .expect("append under existing section");
+
+    let fetched = get_task(&storage, TaskLocator { id: Some(id), path: None })
+        .await
+        .expect("get task");
+
+    let body = fetched["body"].as_str().expect("body");
+    // Both notes appear and ## Other still follows Notes.
+    assert!(body.contains("First note."));
+    assert!(body.contains("Second note."));
+    assert!(body.contains("## Other"));
+    let notes_pos = body.find("## Notes").unwrap();
+    let other_pos = body.find("## Other").unwrap();
+    assert!(notes_pos < other_pos, "## Other stays after ## Notes");
+}
+
+#[tokio::test]
+async fn add_external_ref_stores_and_round_trips() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    add_external_ref(
+        &storage,
+        AddExternalRefInput {
+            locator: TaskLocator { id: Some(id.clone()), path: None },
+            system: "jira".to_string(),
+            reference: "PROJ-42".to_string(),
+            url: Some("https://jira.example.com/browse/PROJ-42".to_string()),
+        },
+    )
+    .await
+    .expect("add external ref");
+
+    let fetched = get_task(&storage, TaskLocator { id: Some(id), path: None })
+        .await
+        .expect("get task");
+
+    let refs = fetched["frontmatter"]["external_refs"]
+        .as_array()
+        .expect("external_refs array");
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0]["system"].as_str(), Some("jira"));
+    assert_eq!(refs[0]["ref"].as_str(), Some("PROJ-42"));
+    assert_eq!(
+        refs[0]["url"].as_str(),
+        Some("https://jira.example.com/browse/PROJ-42")
+    );
+}
+
+#[tokio::test]
+async fn add_external_ref_deduplicates() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    for _ in 0..3 {
+        add_external_ref(
+            &storage,
+            AddExternalRefInput {
+                locator: TaskLocator { id: Some(id.clone()), path: None },
+                system: "github".to_string(),
+                reference: "org/repo#7".to_string(),
+                url: None,
+            },
+        )
+        .await
+        .expect("add external ref");
+    }
+
+    let fetched = get_task(&storage, TaskLocator { id: Some(id), path: None })
+        .await
+        .expect("get task");
+
+    let refs = fetched["frontmatter"]["external_refs"]
+        .as_array()
+        .expect("external_refs array");
+    assert_eq!(refs.len(), 1, "duplicates collapsed to one entry");
+}
+
+#[tokio::test]
+async fn add_external_ref_markdown_special_chars_do_not_corrupt() {
+    // Regression: bold Markdown in a ref value must not break YAML parsing.
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    add_external_ref(
+        &storage,
+        AddExternalRefInput {
+            locator: TaskLocator { id: Some(id.clone()), path: None },
+            system: "internal".to_string(),
+            reference: "**BOLD-REF**".to_string(),
+            url: None,
+        },
+    )
+    .await
+    .expect("add ref with special chars");
+
+    // Must be readable again without error.
+    let fetched = get_task(&storage, TaskLocator { id: Some(id), path: None })
+        .await
+        .expect("task readable after bold ref");
+
+    let refs = fetched["frontmatter"]["external_refs"]
+        .as_array()
+        .expect("external_refs");
+    assert_eq!(refs[0]["ref"].as_str(), Some("**BOLD-REF**"));
+}
+
+#[tokio::test]
+async fn update_task_body_append_and_prepend() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    update_task(
+        &storage,
+        UpdateTaskInput {
+            locator: TaskLocator { id: Some(id.clone()), path: None },
+            patch: json!({"body_append": "appended line"}),
+        },
+    )
+    .await
+    .expect("body_append");
+
+    update_task(
+        &storage,
+        UpdateTaskInput {
+            locator: TaskLocator { id: Some(id.clone()), path: None },
+            patch: json!({"body_prepend": "prepended line"}),
+        },
+    )
+    .await
+    .expect("body_prepend");
+
+    let fetched = get_task(&storage, TaskLocator { id: Some(id), path: None })
+        .await
+        .expect("get task");
+
+    let body = fetched["body"].as_str().expect("body");
+    assert!(body.starts_with("prepended line"), "prepend is at start");
+    assert!(body.contains("Initial body."), "original body preserved");
+    assert!(body.ends_with("appended line"), "append is at end");
+}
+
+#[tokio::test]
+async fn repair_salvage_makes_corrupt_task_readable() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let path = created["path"].as_str().expect("path").to_string();
+
+    // Corrupt the frontmatter by injecting raw Markdown bold that breaks YAML.
+    let original = tokio::fs::read_to_string(&path).await.expect("read");
+    let corrupted = original.replacen("title:", "title: **broken** yaml * here:", 1);
+    tokio::fs::write(&path, &corrupted).await.expect("write corrupted");
+
+    let result = repair_task_frontmatter(
+        &storage,
+        RepairTaskFrontmatterInput {
+            locator: TaskLocator { id: None, path: Some(path.clone()) },
+            strategy: RepairStrategy::Salvage,
+            dry_run: Some(false),
+        },
+    )
+    .await
+    .expect("repair should succeed");
+
+    assert_eq!(result["repaired"].as_bool(), Some(true));
+
+    // File must now be parseable via get_task.
+    get_task(&storage, TaskLocator { id: None, path: Some(path.clone()) })
+        .await
+        .expect("repaired task is readable");
+
+    // The corrupt YAML should be preserved in the body under the recovery heading.
+    let repaired_content = tokio::fs::read_to_string(&path).await.expect("read repaired");
+    assert!(repaired_content.contains("## Recovered Frontmatter"));
+}
+
+#[tokio::test]
+async fn repair_dry_run_does_not_modify_file() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let path = created["path"].as_str().expect("path").to_string();
+
+    let original = tokio::fs::read_to_string(&path).await.expect("read");
+    let corrupted = original.replacen("title:", "title: **broken**:", 1);
+    tokio::fs::write(&path, &corrupted).await.expect("write corrupted");
+
+    let result = repair_task_frontmatter(
+        &storage,
+        RepairTaskFrontmatterInput {
+            locator: TaskLocator { id: None, path: Some(path.clone()) },
+            strategy: RepairStrategy::Reset,
+            dry_run: Some(true),
+        },
+    )
+    .await
+    .expect("dry_run repair");
+
+    assert_eq!(result["dry_run"].as_bool(), Some(true));
+    assert!(result["preview"].as_str().is_some(), "preview returned");
+
+    // File on disk must be unchanged.
+    let on_disk = tokio::fs::read_to_string(&path).await.expect("read after dry run");
+    assert_eq!(on_disk, corrupted, "file not modified during dry_run");
+}
+
+#[tokio::test]
+async fn repair_already_valid_returns_no_op() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops")).await.expect("create");
+    let path = created["path"].as_str().expect("path").to_string();
+
+    let result = repair_task_frontmatter(
+        &storage,
+        RepairTaskFrontmatterInput {
+            locator: TaskLocator { id: None, path: Some(path) },
+            strategy: RepairStrategy::Salvage,
+            dry_run: None,
+        },
+    )
+    .await
+    .expect("repair on valid file");
+
+    assert_eq!(result["repaired"].as_bool(), Some(false));
 }

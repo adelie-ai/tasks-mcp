@@ -2,6 +2,15 @@
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExternalRef {
+    pub system: String,
+    #[serde(rename = "ref")]
+    pub reference: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskType {
@@ -61,6 +70,8 @@ pub struct TaskFrontmatter {
     pub links: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assignee: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_refs: Option<Vec<ExternalRef>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +95,8 @@ pub struct TaskSummary {
     pub epic_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assignee: Option<String>,
 }
 
 impl From<&TaskDocument> for TaskSummary {
@@ -98,6 +111,7 @@ impl From<&TaskDocument> for TaskSummary {
             path: value.path.clone(),
             epic_id: value.frontmatter.epic_id.clone(),
             tags: value.frontmatter.tags.clone(),
+            assignee: value.frontmatter.assignee.clone(),
         }
     }
 }

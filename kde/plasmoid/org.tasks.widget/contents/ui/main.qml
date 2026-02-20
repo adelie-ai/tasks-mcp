@@ -56,15 +56,19 @@ PlasmoidItem {
 
                 var onSuccess = full._pendingSuccess[idx]
                 var onError   = full._pendingError[idx]
+                var onAny     = full._pendingOnAny[idx]
                 full._pendingCmds.splice(idx, 1)
                 full._pendingSuccess.splice(idx, 1)
                 full._pendingError.splice(idx, 1)
+                full._pendingOnAny.splice(idx, 1)
 
                 var stdout   = (data["stdout"]    || "").trim()
                 var stderr   = (data["stderr"]    || "").trim()
                 var exitCode =  data["exit code"] || 0
 
-                if (exitCode !== 0) {
+                if (onAny) {
+                    onAny(exitCode, stdout, stderr)
+                } else if (exitCode !== 0) {
                     if (onError) { onError(stderr || ("exit code " + exitCode)) }
                 } else {
                     if (onSuccess) { onSuccess(stdout) }
@@ -75,13 +79,15 @@ PlasmoidItem {
         property var _pendingCmds:    []
         property var _pendingSuccess: []
         property var _pendingError:   []
+        property var _pendingOnAny:   []
 
-        function runCommand(cmd, onSuccess, onError) {
+        function runCommand(cmd, onSuccess, onError, onAny) {
             // Append a unique nonce so identical commands can queue concurrently.
             var unique = cmd + " #" + Date.now()
             _pendingCmds.push(unique)
             _pendingSuccess.push(onSuccess || null)
             _pendingError.push(onError   || null)
+            _pendingOnAny.push(onAny     || null)
             executable.connectSource(unique)
         }
 
@@ -95,6 +101,34 @@ PlasmoidItem {
         property string searchText: ""
         property bool   loading:    false
         property string errorMsg:   ""
+
+        // ---- D-Bus signal watcher -----------------------------------------
+        // Runs tasks_client.py watch-signal in a persistent loop.
+        // Exit 0 = TasksChanged fired  → reload tasks + restart watcher.
+        // Exit 2 = timeout (60 s)      → restart watcher (no reload).
+        // Exit other                   → log error, restart after short delay.
+        function watchSignal() {
+            runCommand(
+                helper("watch-signal --timeout 60"),
+                null, null,
+                function(exitCode, _out, err) {
+                    if (exitCode === 0) {
+                        // TasksChanged signal received — refresh and keep watching.
+                        reload()
+                    } else if (exitCode !== 2) {
+                        // Unexpected error (gi unavailable, bus gone, etc.).
+                        console.warn("tasks-widget: signal watcher error:", err)
+                    }
+                    // Always restart: exit 0 and 2 immediately, errors after
+                    // a short back-off so we don't spin on a broken bus.
+                    if (exitCode === 0 || exitCode === 2) {
+                        watchSignal()
+                    } else {
+                        Qt.callLater(watchSignal)
+                    }
+                }
+            )
+        }
 
         // ---- Load tasks (list-lists then list-tasks) -----------------------
         function reload() {
@@ -394,6 +428,9 @@ PlasmoidItem {
             }
         }
 
-        Component.onCompleted: full.reload()
+        Component.onCompleted: {
+            full.reload()
+            full.watchSignal()
+        }
     }
 }

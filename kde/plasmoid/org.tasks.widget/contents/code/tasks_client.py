@@ -6,8 +6,9 @@ Usage:
   tasks_client.py list-lists
   tasks_client.py list-tasks [filter_json]
   tasks_client.py set-status <task_id> <new_status>
+  tasks_client.py watch-signal [--timeout N]   # exit 0 = signal fired, exit 2 = timeout
 
-All output is JSON on stdout.
+All output is JSON on stdout (except watch-signal which produces no output).
 """
 
 import ast
@@ -80,6 +81,15 @@ def main() -> int:
             raw = gdbus_call("SetStatus", payload)
             print(json.dumps(json.loads(raw)))
 
+        elif cmd == "watch-signal":
+            timeout_sec = 60
+            args = sys.argv[2:]
+            if "--timeout" in args:
+                idx = args.index("--timeout")
+                if idx + 1 < len(args):
+                    timeout_sec = int(args[idx + 1])
+            return _watch_signal(timeout_sec)
+
         else:
             print(json.dumps({"error": f"unknown command: {cmd}"}))
             return 1
@@ -89,6 +99,64 @@ def main() -> int:
         return 1
 
     return 0
+
+
+def _watch_signal(timeout_sec: int = 60) -> int:
+    """
+    Subscribe to org.tasks.TasksMcp.TasksChanged on the session bus.
+    Blocks until the signal fires or the timeout elapses.
+
+    Exit codes:
+      0 — signal received  (caller should reload and restart watcher)
+      2 — timeout elapsed  (caller should restart watcher without reloading)
+      1 — unexpected error
+    """
+    try:
+        import gi  # noqa: PLC0415
+        gi.require_version("Gio", "2.0")
+        from gi.repository import Gio, GLib  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"watch-signal: gi not available: {exc}\n")
+        return 1
+
+    loop = GLib.MainLoop()
+    fired: list[bool] = [False]
+
+    def on_signal(
+        _conn: object,
+        _sender: object,
+        _path: object,
+        _iface: object,
+        _signal: object,
+        _params: object,
+    ) -> None:
+        fired[0] = True
+        loop.quit()
+
+    try:
+        conn = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"watch-signal: cannot connect to session bus: {exc}\n")
+        return 1
+
+    sub_id = conn.signal_subscribe(
+        SERVICE,
+        IFACE,
+        "TasksChanged",
+        OBJECT_PATH,
+        None,
+        Gio.DBusSignalFlags.NONE,
+        on_signal,
+        None,
+    )
+
+    # Quit the loop after timeout_sec regardless.
+    GLib.timeout_add_seconds(timeout_sec, lambda: (loop.quit(), False)[1])
+
+    loop.run()
+    conn.signal_unsubscribe(sub_id)
+
+    return 0 if fired[0] else 2
 
 
 if __name__ == "__main__":

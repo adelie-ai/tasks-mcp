@@ -39,6 +39,11 @@ PlasmoidItem {
         implicitWidth:  Kirigami.Units.gridUnit * 28
         implicitHeight: Kirigami.Units.gridUnit * 40
 
+        Layout.minimumWidth:  Kirigami.Units.gridUnit * 22
+        Layout.minimumHeight: Kirigami.Units.gridUnit * 28
+        Layout.preferredWidth:  implicitWidth
+        Layout.preferredHeight: implicitHeight
+
         // Path to the Python D-Bus helper bundled inside this plasmoid package.
         readonly property string helperPath: Qt.resolvedUrl("../code/tasks_client.py")
             .toString().replace("file://", "")

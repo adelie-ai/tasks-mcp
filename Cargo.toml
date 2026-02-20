@@ -6,6 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 resolver = "3"
+members = [".", "kde/widget"]
 
 [dependencies]
 axum = { version = "0.8.8", features = ["ws"] }
@@ -20,6 +21,7 @@ shellexpand = "3.1"
 thiserror = "2.0.17"
 tokio = { version = "1.48.0", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
+zbus = { version = "5", features = ["tokio"] }
 
 [dev-dependencies]
 tempfile = "3.0"

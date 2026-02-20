@@ -29,6 +29,9 @@ pub enum TaskMcpError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    #[error("internal error: {0}")]
+    Internal(String),
+
     #[error("transport error: {0}")]
     Transport(#[from] TransportError),
 }

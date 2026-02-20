@@ -1,5 +1,6 @@
 #![deny(warnings)]
 
+pub mod dbus;
 pub mod error;
 pub mod markdown;
 pub mod model;

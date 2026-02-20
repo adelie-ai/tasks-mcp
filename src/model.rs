@@ -94,6 +94,10 @@ pub struct TaskSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epic_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<Priority>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assignee: Option<String>,
@@ -110,6 +114,8 @@ impl From<&TaskDocument> for TaskSummary {
             updated: value.frontmatter.updated.clone(),
             path: value.path.clone(),
             epic_id: value.frontmatter.epic_id.clone(),
+            priority: value.frontmatter.priority,
+            due: value.frontmatter.due.clone(),
             tags: value.frontmatter.tags.clone(),
             assignee: value.frontmatter.assignee.clone(),
         }

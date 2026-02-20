@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.tasks.TasksMcp
+Exec=/usr/local/bin/tasks-mcp dbus

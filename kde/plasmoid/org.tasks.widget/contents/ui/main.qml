@@ -156,7 +156,7 @@ PlasmoidItem {
 
         function fetchTasks() {
             var filterArg = (filterCombo.currentIndex > 0)
-                ? "list-tasks '" + filterCombo.currentText + "'"
+                ? "list-tasks '" + JSON.stringify({list: filterCombo.currentText}).replace(/'/g, "'\\''" ) + "'"
                 : "list-tasks"
             runCommand(
                 helper(filterArg),
@@ -191,9 +191,11 @@ PlasmoidItem {
             var needle = searchText.toLowerCase()
             for (var i = 0; i < raw.length; i++) {
                 var t = raw[i]
-                if (!todoFilter.checked    && t.status === "todo")    { continue }
-                if (!doingFilter.checked   && t.status === "doing")   { continue }
-                if (!blockedFilter.checked && t.status === "blocked") { continue }
+                if (!todoFilter.checked        && t.status === "todo")        { continue }
+                if (!doingFilter.checked       && t.status === "doing")       { continue }
+                if (!blockedFilter.checked     && t.status === "blocked")     { continue }
+                if (!validatingFilter.checked  && t.status === "validating")  { continue }
+                if (!doneFilter.checked        && (t.status === "done" || t.status === "canceled")) { continue }
                 if (needle !== "" && t.title.toLowerCase().indexOf(needle) < 0) { continue }
                 result.push(t)
             }
@@ -323,19 +325,35 @@ PlasmoidItem {
                             placeholderText: "Search…"
                             onTextChanged: { full.searchText = text; taskListModel.rebuild() }
                         }
-                        Button {
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+                        Label { text: "Show:" }
+                        CheckBox {
                             id: todoFilter
-                            text: "Todo"; checkable: true; checked: true; highlighted: checked
+                            text: "Todo"; checked: true
                             onCheckedChanged: taskListModel.rebuild()
                         }
-                        Button {
+                        CheckBox {
                             id: doingFilter
-                            text: "Doing"; checkable: true; checked: true; highlighted: checked
+                            text: "Doing"; checked: true
                             onCheckedChanged: taskListModel.rebuild()
                         }
-                        Button {
+                        CheckBox {
                             id: blockedFilter
-                            text: "Blocked"; checkable: true; checked: true; highlighted: checked
+                            text: "Blocked"; checked: true
+                            onCheckedChanged: taskListModel.rebuild()
+                        }
+                        CheckBox {
+                            id: validatingFilter
+                            text: "Validating"; checked: true
+                            onCheckedChanged: taskListModel.rebuild()
+                        }
+                        CheckBox {
+                            id: doneFilter
+                            text: "Done"; checked: false
                             onCheckedChanged: taskListModel.rebuild()
                         }
                     }
@@ -398,7 +416,7 @@ PlasmoidItem {
                         verticalCenter: parent.verticalCenter
                         leftMargin: Kirigami.Units.largeSpacing
                     }
-                    text: itemModel.sectionTitle
+                    text: itemModel ? itemModel.sectionTitle : ""
                     font.bold: true
                     font.pixelSize: Kirigami.Units.gridUnit * 0.75
                     color: Kirigami.Theme.disabledTextColor
@@ -410,13 +428,13 @@ PlasmoidItem {
             id: taskDelegateComp
             TaskDelegate {
                 width: listView.width
-                taskId:       itemModel.id
-                taskTitle:    itemModel.title
-                taskStatus:   itemModel.status
-                taskPriority: itemModel.priority
-                taskList:     itemModel.list
-                taskDue:      itemModel.due
-                taskType:     itemModel.task_type
+                taskId:       itemModel ? itemModel.id        : ""
+                taskTitle:    itemModel ? itemModel.title     : ""
+                taskStatus:   itemModel ? itemModel.status    : ""
+                taskPriority: itemModel ? itemModel.priority  : ""
+                taskList:     itemModel ? itemModel.list      : ""
+                taskDue:      itemModel ? itemModel.due       : ""
+                taskType:     itemModel ? itemModel.task_type : ""
 
                 onStatusChangeRequested: function(newStatus) {
                     full.runCommand(

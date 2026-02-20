@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Tasks
+Comment=Open the Tasks MCP widget
+Exec=plasmawindowed org.tasks.widget
+Icon=view-task
+Terminal=false
+Categories=Utility;

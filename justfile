@@ -2,13 +2,16 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # Paths
 bin_dir          := env_var_or_default("HOME", "") + "/.local/bin"
-dbus_service_dir := env_var_or_default("XDG_DATA_HOME", env_var("HOME") + "/.local/share") + "/dbus-1/services"
+xdg_data_home    := env_var_or_default("XDG_DATA_HOME", env_var("HOME") + "/.local/share")
+dbus_service_dir := xdg_data_home + "/dbus-1/services"
 dbus_service_src := "dbus/org.tasks.TasksMcp.service"
 dbus_service_dst := dbus_service_dir + "/org.tasks.TasksMcp.service"
 tasks_bin_src    := "target/release/tasks-mcp"
 tasks_bin_dst    := bin_dir + "/tasks-mcp"
 widget_dir       := "kde/plasmoid/org.tasks.widget"
 widget_id        := "org.tasks.widget"
+desktop_src      := "kde/org.tasks.widget.desktop"
+desktop_dst      := xdg_data_home + "/applications/org.tasks.widget.desktop"
 
 # List available commands
 default: list
@@ -45,16 +48,22 @@ install-dbus:
     sed "s|Exec=.*|Exec={{bin_dir}}/tasks-mcp dbus|" "{{dbus_service_src}}" > "{{dbus_service_dst}}"
     @echo "Installed D-Bus activation file -> {{dbus_service_dst}}"
 
+# Install the desktop launcher icon to ~/.local/share/applications
+install-desktop:
+    mkdir -p "$(dirname '{{desktop_dst}}')"
+    cp "{{desktop_src}}" "{{desktop_dst}}"
+    @echo "Installed desktop launcher -> {{desktop_dst}}"
+
 # Install the KDE plasmoid (first time)
-widget-install:
+widget-install: install-desktop
     kpackagetool6 --type Plasma/Applet --install {{widget_dir}}
 
 # Upgrade the KDE plasmoid after local changes
-widget-refresh:
+widget-refresh: install-desktop
     kpackagetool6 --type Plasma/Applet --upgrade {{widget_dir}}
 
 # Reinstall the KDE plasmoid (remove + install)
-widget-reinstall:
+widget-reinstall: install-desktop
     kpackagetool6 --type Plasma/Applet --remove {{widget_id}} || true
     kpackagetool6 --type Plasma/Applet --install {{widget_dir}}
 
@@ -70,8 +79,8 @@ widget-hard-refresh: widget-reinstall
 widget-remove:
     kpackagetool6 --type Plasma/Applet --remove {{widget_id}} || true
 
-# Install everything: tasks-mcp binary, plasmoid, D-Bus activation
-install: install-bin widget-install install-dbus
+# Install everything: tasks-mcp binary, plasmoid, D-Bus activation, desktop launcher
+install: install-bin widget-install install-dbus install-desktop
     @echo "All components installed."
 
 # Run the widget as a standalone window (no panel required)

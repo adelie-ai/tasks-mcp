@@ -81,6 +81,24 @@ def main() -> int:
             raw = gdbus_call("SetStatus", payload)
             print(json.dumps(json.loads(raw)))
 
+        elif cmd == "set-priority":
+            if len(sys.argv) < 4:
+                print(json.dumps({"error": "set-priority requires <task_id> <priority|none>"}))
+                return 1
+            prio = sys.argv[3]
+            patch: dict = {"priority": None if prio == "none" else prio}
+            payload = json.dumps({"id": sys.argv[2], "patch": patch})
+            raw = gdbus_call("UpdateTask", payload)
+            print(json.dumps(json.loads(raw)))
+
+        elif cmd == "append-note":
+            if len(sys.argv) < 4:
+                print(json.dumps({"error": "append-note requires <task_id> <note>"}))
+                return 1
+            payload = json.dumps({"id": sys.argv[2], "note": sys.argv[3]})
+            raw = gdbus_call("AppendTaskNote", payload)
+            print(json.dumps(json.loads(raw)))
+
         elif cmd == "watch-signal":
             timeout_sec = 60
             args = sys.argv[2:]

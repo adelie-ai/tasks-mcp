@@ -448,6 +448,23 @@ PlasmoidItem {
                         function(err)  { full.errorMsg = "set-status: " + err }
                     )
                 }
+
+                onAppendNoteRequested: function(note) {
+                    var escaped = note.replace(/'/g, "'\\''")
+                    full.runCommand(
+                        full.helper("append-note " + taskId + " '" + escaped + "'"),
+                        function(_out) { full.reload() },
+                        function(err)  { full.errorMsg = "append-note: " + err }
+                    )
+                }
+
+                onPriorityChangeRequested: function(prio) {
+                    full.runCommand(
+                        full.helper("set-priority " + taskId + " " + prio),
+                        function(_out) { full.reload() },
+                        function(err)  { full.errorMsg = "set-priority: " + err }
+                    )
+                }
             }
         }
 

@@ -33,6 +33,7 @@ pub enum TaskStatus {
     Todo,
     Doing,
     Blocked,
+    Validating,
     Done,
     Canceled,
 }

@@ -1,0 +1,19 @@
+{
+  "KPackageStructure": "Plasma/Applet",
+  "KPlugin": {
+    "Id": "org.tasks.widget",
+    "Name": "Tasks",
+    "Description": "Display and manage tasks from tasks-mcp over D-Bus",
+    "Icon": "view-task",
+    "Version": "0.1.0",
+    "License": "Apache-2.0",
+    "Authors": [
+      {
+        "Name": "tasks-mcp contributors"
+      }
+    ],
+    "Category": "Utilities",
+    "EnabledByDefault": true
+  },
+  "X-Plasma-API-Minimum-Version": "6.0"
+}

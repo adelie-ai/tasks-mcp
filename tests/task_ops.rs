@@ -711,3 +711,106 @@ async fn repair_already_valid_returns_no_op() {
 
     assert_eq!(result["repaired"].as_bool(), Some(false));
 }
+
+#[tokio::test]
+async fn set_status_validating_and_list_filter() {
+    let (_dir, storage) = test_storage();
+    storage
+        .create_list("project-alpha")
+        .await
+        .expect("create list");
+
+    // Create two tasks; set one to validating.
+    let task_a = create_task(
+        &storage,
+        CreateTaskInput {
+            list: "project-alpha".to_string(),
+            task_type: tasks_mcp::model::TaskType::Deliverable,
+            title: "Awaiting validation".to_string(),
+            status: Some(tasks_mcp::model::TaskStatus::Doing),
+            epic_id: None,
+            deliverable_ids: None,
+            tags: None,
+            priority: None,
+            due: None,
+            links: None,
+            assignee: None,
+            body: None,
+        },
+    )
+    .await
+    .expect("create task a");
+
+    let _task_b = create_task(
+        &storage,
+        CreateTaskInput {
+            list: "project-alpha".to_string(),
+            task_type: tasks_mcp::model::TaskType::Deliverable,
+            title: "Still in progress".to_string(),
+            status: Some(tasks_mcp::model::TaskStatus::Doing),
+            epic_id: None,
+            deliverable_ids: None,
+            tags: None,
+            priority: None,
+            due: None,
+            links: None,
+            assignee: None,
+            body: None,
+        },
+    )
+    .await
+    .expect("create task b");
+
+    let id_a = task_a["id"].as_str().expect("id").to_string();
+
+    // set_status returns the new status.
+    let result = set_status(
+        &storage,
+        SetStatusInput {
+            locator: TaskLocator {
+                id: Some(id_a.clone()),
+                path: None,
+            },
+            status: tasks_mcp::model::TaskStatus::Validating,
+        },
+    )
+    .await
+    .expect("set status");
+    assert_eq!(result["status"].as_str(), Some("validating"));
+
+    // get_task reflects the persisted status.
+    let fetched = get_task(
+        &storage,
+        TaskLocator {
+            id: Some(id_a),
+            path: None,
+        },
+    )
+    .await
+    .expect("get task");
+    assert_eq!(
+        fetched["frontmatter"]["status"].as_str(),
+        Some("validating")
+    );
+
+    // list_tasks filtered by validating returns exactly one task.
+    let validating_tasks = list_tasks(
+        &storage,
+        ListTasksInput {
+            list: None,
+            lists: None,
+            task_type: None,
+            status: Some(tasks_mcp::model::TaskStatus::Validating),
+            tag: None,
+            epic_id: None,
+            assignee: None,
+        },
+    )
+    .await
+    .expect("list validating");
+    assert_eq!(validating_tasks.as_array().map(Vec::len), Some(1));
+    assert_eq!(
+        validating_tasks[0]["status"].as_str(),
+        Some("validating")
+    );
+}

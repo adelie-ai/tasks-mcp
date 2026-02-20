@@ -36,7 +36,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "list": {"type":"string"},
                     "type": {"type":"string","enum":["epic","deliverable"]},
                     "title": {"type":"string"},
-                    "status": {"type":"string","enum":["todo","doing","blocked","done","canceled"]},
+                    "status": {"type":"string","enum":["todo","doing","blocked","validating","done","canceled"]},
                     "epic_id": {"type":"string"},
                     "deliverable_ids": {"type":"array","items":{"type":"string"}},
                     "tags": {"type":"array","items":{"type":"string"}},
@@ -81,13 +81,13 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "set_status",
-            "description": "Set task status directly. Valid statuses: todo, doing, blocked, done, canceled.",
+            "description": "Set task status directly. Valid statuses: todo, doing, blocked, validating, done, canceled.",
             "inputSchema": {
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
                     "path": {"type":"string"},
-                    "status": {"type":"string","enum":["todo","doing","blocked","done","canceled"]}
+                    "status": {"type":"string","enum":["todo","doing","blocked","validating","done","canceled"]}
                 },
                 "required": ["status"]
             }
@@ -112,7 +112,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "list": {"type":"string"},
                     "lists": {"type":"array","items":{"type":"string"}},
                     "type": {"type":"string","enum":["epic","deliverable"]},
-                    "status": {"type":"string","enum":["todo","doing","blocked","done","canceled"]},
+                    "status": {"type":"string","enum":["todo","doing","blocked","validating","done","canceled"]},
                     "tag": {"type":"string"},
                     "assignee": {"type":"string"},
                     "epic_id": {"type":"string"}

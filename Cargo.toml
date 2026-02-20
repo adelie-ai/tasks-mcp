@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 resolver = "3"
-members = [".", "kde/widget"]
+members = ["."]
 
 [dependencies]
 axum = { version = "0.8.8", features = ["ws"] }

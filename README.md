@@ -30,6 +30,7 @@ WebSocket mode:
 ./target/release/tasks-mcp serve --mode websocket --host 0.0.0.0 --port 8080
 ```
 
+
 ## Available tools
 
 - `list_lists`
@@ -42,6 +43,15 @@ WebSocket mode:
 - `search_tasks`
 - `add_deliverable`
 - `remove_deliverable`
+
+## KDE Widget and MCP Service Bundling
+
+This project includes a KDE widget, which is bundled with the MCP service/server. The philosophy is that MCP-specific UI functionality is distributed together with the MCP service that provides it (at least for now). This approach ensures that users have access to integrated UI features directly from the MCP service, simplifying deployment and usage.
+
+## DBUS API
+
+The MCP server also provides a DBUS API equivalent to the functions exposed to the LLM, allowing desktop UI components to directly manipulate tasks and lists. This enables seamless integration between the server and desktop environments for task management without requiring the LLM to mediate deterministic actions.
+
 
 ## Development
 

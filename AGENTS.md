@@ -1,45 +1,16 @@
-# AGENTS
+# Agent Instructions
 
-Project guidance for coding agents and contributors working in this repository.
+## Dependency Security Policy
 
-## Scope and priorities
+After adding any new packages, **scan for CVEs before building**.
 
-- Keep changes focused and minimal.
-- Fix root causes rather than layering temporary workarounds.
-- Avoid unrelated refactors while implementing a requested change.
+Build scripts (e.g. `build.rs` in Rust, install scripts in npm) execute at build time and are a potential attack vector. Scanning the updated lockfile *before* running a build catches malicious or vulnerable transitive dependencies before any build-time code can execute.
 
-## Cross-agent operating rules
+### Workflow
 
-- Be concise and direct in code and communication.
-- Prefer the smallest change that fully solves the requested problem.
-- Complete work end-to-end when feasible (implement + validate), not just analysis.
-- If requirements are ambiguous, choose the simplest interpretation that matches existing behavior.
-- Do not add speculative features, broad rewrites, or unrelated cleanup.
-- Do not commit, create branches, or alter repository history unless explicitly requested.
+1. Add the dependency (e.g. `cargo add <crate>`) — this updates the lockfile but does not build.
+2. Scan immediately using `cve-mcp scan_packages` — parse the updated lockfile and pass all (name, version, ecosystem) tuples to the tool.
+3. Review findings. Investigate any Critical or High severity issues before proceeding.
+4. Only build once the scan is clean (or findings are understood and accepted).
 
-## Rust code style
-
-- Follow existing style and naming patterns in the repository.
-- Keep functions explicit and straightforward.
-- Avoid one-letter variable names except for tight loop indices.
-- Do not add dependencies unless they materially simplify or harden the implementation.
-
-## Testing policy
-
-For behavior changes:
-
-1. Add or adjust tests covering expected behavior.
-2. Implement code changes.
-3. Re-run targeted tests first, then broader suites.
-
-Before finishing:
-
-- Run `cargo test`.
-- Run `cargo clippy --all-targets --all-features -- -D warnings`.
-- Keep the project warning-free under `#![deny(warnings)]`.
-
-## MCP-specific notes
-
-- Keep initialization gating semantics for MCP methods (`initialize` then `initialized`).
-- Keep tool names and argument contracts stable unless explicitly changing the spec.
-- Return structured, machine-consumable tool outputs.
+This applies regardless of ecosystem (Cargo, npm, PyPI, etc.).

@@ -29,10 +29,6 @@ List operations load all files into memory without limits.
 
 ---
 
-## Resolved (2026-03-31)
-
-- Content-Length DoS — 10 MiB limit added to transport
-
 ## Positive Findings
 
 - List names validated for path separators

@@ -98,3 +98,22 @@ run-ws:
 # Run the D-Bus standalone service (dev)
 run-dbus:
     cargo run -p tasks-mcp -- dbus
+
+# --- Local verification ("local CI") ---
+# Run locally instead of GitHub Actions. `install-hooks` wires `check` into a
+# git pre-push hook so it runs automatically before every push.
+# Reuses the existing plain-cargo `build`, `test`, and `lint` recipes above.
+check: fmt-check lint build test
+fmt-check:
+    cargo fmt --all --check
+fmt:
+    cargo fmt --all
+test-integration:
+    cargo test --workspace -- --ignored
+premerge:
+    git fetch origin
+    git rebase origin/main
+    just check
+install-hooks:
+    git config core.hooksPath .githooks
+    @echo "pre-push hook active — bypass once with: git push --no-verify"

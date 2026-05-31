@@ -71,8 +71,7 @@ impl TasksInterface {
     /// Return a JSON array of task summaries.  `input_json` is a
     /// `ListTasksInput` object serialised to JSON (all fields optional).
     async fn list_tasks(&self, input_json: &str) -> fdo::Result<String> {
-        let input: ListTasksInput =
-            serde_json::from_str(input_json).map_err(map_err)?;
+        let input: ListTasksInput = serde_json::from_str(input_json).map_err(map_err)?;
         let result = list_tasks(&self.storage, input).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -90,8 +89,7 @@ impl TasksInterface {
 
     /// Full-text search.  `input_json` is a `SearchTasksInput` object.
     async fn search_tasks(&self, input_json: &str) -> fdo::Result<String> {
-        let input: SearchTasksInput =
-            serde_json::from_str(input_json).map_err(map_err)?;
+        let input: SearchTasksInput = serde_json::from_str(input_json).map_err(map_err)?;
         let result = search_tasks(&self.storage, input).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -116,8 +114,7 @@ impl TasksInterface {
         input_json: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<String> {
-        let input: CreateTaskInput =
-            serde_json::from_str(input_json).map_err(map_err)?;
+        let input: CreateTaskInput = serde_json::from_str(input_json).map_err(map_err)?;
         let result = create_task(&self.storage, input).await.map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
@@ -129,12 +126,10 @@ impl TasksInterface {
         input_json: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<String> {
-        let input: UpdateTaskInput =
-            serde_json::from_str(input_json).map_err(map_err)?;
-        let result =
-            crate::operations::task_ops::update_task(&self.storage, input)
-                .await
-                .map_err(map_err)?;
+        let input: UpdateTaskInput = serde_json::from_str(input_json).map_err(map_err)?;
+        let result = crate::operations::task_ops::update_task(&self.storage, input)
+            .await
+            .map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -145,8 +140,7 @@ impl TasksInterface {
         input_json: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<String> {
-        let input: SetStatusInput =
-            serde_json::from_str(input_json).map_err(map_err)?;
+        let input: SetStatusInput = serde_json::from_str(input_json).map_err(map_err)?;
         let result = set_status(&self.storage, input).await.map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
@@ -181,7 +175,9 @@ impl TasksInterface {
             epic_id: epic_id.to_owned(),
             deliverable_id: deliverable_id.to_owned(),
         };
-        let result = add_deliverable(&self.storage, input).await.map_err(map_err)?;
+        let result = add_deliverable(&self.storage, input)
+            .await
+            .map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -197,8 +193,9 @@ impl TasksInterface {
             epic_id: epic_id.to_owned(),
             deliverable_id: deliverable_id.to_owned(),
         };
-        let result =
-            remove_deliverable(&self.storage, input).await.map_err(map_err)?;
+        let result = remove_deliverable(&self.storage, input)
+            .await
+            .map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -209,9 +206,10 @@ impl TasksInterface {
         input_json: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<String> {
-        let input: AppendTaskNoteInput =
-            serde_json::from_str(input_json).map_err(map_err)?;
-        let result = append_task_note(&self.storage, input).await.map_err(map_err)?;
+        let input: AppendTaskNoteInput = serde_json::from_str(input_json).map_err(map_err)?;
+        let result = append_task_note(&self.storage, input)
+            .await
+            .map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -223,9 +221,10 @@ impl TasksInterface {
         input_json: &str,
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
     ) -> fdo::Result<String> {
-        let input: AddExternalRefInput =
-            serde_json::from_str(input_json).map_err(map_err)?;
-        let result = add_external_ref(&self.storage, input).await.map_err(map_err)?;
+        let input: AddExternalRefInput = serde_json::from_str(input_json).map_err(map_err)?;
+        let result = add_external_ref(&self.storage, input)
+            .await
+            .map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -239,8 +238,9 @@ impl TasksInterface {
     ) -> fdo::Result<String> {
         let input: RepairTaskFrontmatterInput =
             serde_json::from_str(input_json).map_err(map_err)?;
-        let result =
-            repair_task_frontmatter(&self.storage, input).await.map_err(map_err)?;
+        let result = repair_task_frontmatter(&self.storage, input)
+            .await
+            .map_err(map_err)?;
         Self::tasks_changed(&emitter).await.map_err(map_err)?;
         to_json(&result)
     }
@@ -249,7 +249,11 @@ impl TasksInterface {
 // ---- small helper -----------------------------------------------------------
 
 fn non_empty(s: &str) -> Option<String> {
-    if s.is_empty() { None } else { Some(s.to_owned()) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_owned())
+    }
 }
 
 // ---- service runner ---------------------------------------------------------

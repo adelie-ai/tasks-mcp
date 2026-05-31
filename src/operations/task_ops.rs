@@ -580,9 +580,8 @@ pub async fn repair_task_frontmatter(
                 assignee: None,
                 external_refs: None,
             };
-            let recovered_section = format!(
-                "\n\n## Recovered Frontmatter\n\n```yaml\n{yaml_block}\n```"
-            );
+            let recovered_section =
+                format!("\n\n## Recovered Frontmatter\n\n```yaml\n{yaml_block}\n```");
             let new_body = format!("{body_raw}{recovered_section}");
             render_task_markdown(&minimal, &new_body)?
         }

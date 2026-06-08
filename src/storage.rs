@@ -1,6 +1,7 @@
 #![deny(warnings)]
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::{env, path};
 
 use chrono::Local;
@@ -200,9 +201,16 @@ pub fn validate_list_name(name: &str) -> Result<()> {
             "list name cannot be empty".to_string(),
         ));
     }
-    if trimmed.contains('/') || trimmed.contains('\\') {
+    // Allowlist: only ASCII alphanumerics, hyphens, and underscores.
+    // This implicitly rejects path separators, `..`, spaces, and other
+    // characters that could be used for path traversal.
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(TaskMcpError::InvalidArgument(
-            "list name cannot contain path separators".to_string(),
+            "list name may only contain ASCII letters, digits, hyphens, and underscores"
+                .to_string(),
         ));
     }
     Ok(())
@@ -220,23 +228,47 @@ pub fn now_iso8601() -> String {
 }
 
 pub fn slugify(title: &str) -> String {
+    static RE_NONWORD: OnceLock<Regex> = OnceLock::new();
+    static RE_SPACES: OnceLock<Regex> = OnceLock::new();
+    static RE_DASHES: OnceLock<Regex> = OnceLock::new();
+
+    let re_nonword =
+        RE_NONWORD.get_or_init(|| Regex::new(r"[^a-z0-9\s-]").expect("regex compiles"));
+    let re_spaces = RE_SPACES.get_or_init(|| Regex::new(r"\s+").expect("regex compiles"));
+    let re_dashes = RE_DASHES.get_or_init(|| Regex::new(r"-+").expect("regex compiles"));
+
     let lowercase = title.to_lowercase();
-    let cleaned = Regex::new(r"[^a-z0-9\s-]")
-        .expect("regex compiles")
-        .replace_all(&lowercase, "")
-        .into_owned();
-    let dashed = Regex::new(r"\s+")
-        .expect("regex compiles")
-        .replace_all(cleaned.trim(), "-")
-        .into_owned();
-    let collapsed = Regex::new(r"-+")
-        .expect("regex compiles")
-        .replace_all(&dashed, "-")
-        .into_owned();
+    let cleaned = re_nonword.replace_all(&lowercase, "").into_owned();
+    let dashed = re_spaces.replace_all(cleaned.trim(), "-").into_owned();
+    let collapsed = re_dashes.replace_all(&dashed, "-").into_owned();
 
     if collapsed.is_empty() {
         "task".to_string()
     } else {
         collapsed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_list_name;
+
+    #[test]
+    fn validate_list_name_rejects_dotdot() {
+        assert!(validate_list_name("..").is_err());
+        assert!(validate_list_name("../etc").is_err());
+    }
+
+    #[test]
+    fn validate_list_name_rejects_path_separators() {
+        assert!(validate_list_name("foo/bar").is_err());
+        assert!(validate_list_name("foo\\bar").is_err());
+    }
+
+    #[test]
+    fn validate_list_name_accepts_valid_names() {
+        assert!(validate_list_name("my-list").is_ok());
+        assert!(validate_list_name("work_tasks").is_ok());
+        assert!(validate_list_name("Q1").is_ok());
     }
 }

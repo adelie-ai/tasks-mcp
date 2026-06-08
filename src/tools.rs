@@ -70,7 +70,18 @@ pub fn tool_definitions() -> Vec<Value> {
                     "path": {"type":"string"},
                     "patch": {
                         "type":"object",
+                        "description": "Fields to update. All fields are optional; omit fields that should not change. Set a nullable field to null to clear it.",
                         "properties": {
+                            "title": {"type":"string","description":"New task title."},
+                            "status": {"type":"string","enum":["todo","doing","blocked","validating","done","canceled"],"description":"New task status."},
+                            "tags": {"type":["array","null"],"items":{"type":"string"},"description":"Replace the tag list (null to clear)."},
+                            "priority": {"type":["string","null"],"enum":["low","medium","high","critical",null],"description":"Task priority (null to clear)."},
+                            "due": {"type":["string","null"],"description":"Due date as ISO 8601 string (null to clear)."},
+                            "links": {"type":["array","null"],"items":{"type":"string"},"description":"Replace the links list (null to clear)."},
+                            "assignee": {"type":["string","null"],"description":"Assignee identifier (null to clear)."},
+                            "epic_id": {"type":["string","null"],"description":"Parent epic ID (null to clear)."},
+                            "deliverable_ids": {"type":["array","null"],"items":{"type":"string"},"description":"Replace the deliverable IDs list (null to clear)."},
+                            "body": {"type":"string","description":"Replace the entire task body."},
                             "body_append": {"type":"string","description":"Text to append to the end of the task body."},
                             "body_prepend": {"type":"string","description":"Text to prepend to the start of the task body."}
                         }

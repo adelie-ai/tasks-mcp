@@ -31,19 +31,4 @@ pub enum TaskMcpError {
 
     #[error("internal error: {0}")]
     Internal(String),
-
-    #[error("transport error: {0}")]
-    Transport(#[from] TransportError),
-}
-
-#[derive(Debug, Error)]
-pub enum TransportError {
-    #[error("io error: {0}")]
-    Io(#[from] io::Error),
-
-    #[error("invalid message: {0}")]
-    InvalidMessage(String),
-
-    #[error("connection closed")]
-    ConnectionClosed,
 }

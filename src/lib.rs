@@ -5,7 +5,6 @@ pub mod error;
 pub mod markdown;
 pub mod model;
 pub mod operations;
-pub mod server;
+pub mod service;
 pub mod storage;
 pub mod tools;
-pub mod transport;

@@ -1,24 +1,12 @@
 #![deny(warnings)]
 
-use clap::{Parser, ValueEnum};
-use std::fmt;
-use tasks_mcp::error::Result;
-use tasks_mcp::server::McpServer;
+use std::sync::Arc;
 
-#[derive(Clone, Debug, ValueEnum)]
-enum TransportMode {
-    Stdio,
-    Websocket,
-}
-
-impl fmt::Display for TransportMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TransportMode::Stdio => write!(f, "stdio"),
-            TransportMode::Websocket => write!(f, "websocket"),
-        }
-    }
-}
+use clap::Parser;
+use mcp_core::{CommonServeArgs, ServerConfig, ServerCore};
+use tasks_mcp::error::{Result, TaskMcpError};
+use tasks_mcp::service::TasksService;
+use tasks_mcp::storage::Storage;
 
 #[derive(Parser)]
 #[command(name = "tasks-mcp")]
@@ -34,14 +22,11 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
-    /// Run an MCP transport (stdio or websocket) with the D-Bus service also active.
+    /// Run an MCP transport (stdio/websocket/unix) with the D-Bus service also active.
     Serve {
-        #[arg(short, long, default_value_t = TransportMode::Stdio)]
-        mode: TransportMode,
-        #[arg(short, long, default_value_t = 8080)]
-        port: u16,
-        #[arg(long, default_value = "0.0.0.0")]
-        host: String,
+        /// Transport-selection flags (`--transport`/`--mode`, `--host`, `--port`, `--socket-path`).
+        #[command(flatten)]
+        common: CommonServeArgs,
         /// Disable the automatic D-Bus service alongside this transport.
         #[arg(long)]
         no_dbus: bool,
@@ -50,37 +35,48 @@ enum Commands {
     Dbus,
 }
 
+/// The MCP server configuration handed to mcp-core. Stdio (the default) plus
+/// websocket, matching the transports tasks-mcp has historically exposed.
+fn server_config() -> ServerConfig {
+    ServerConfig::new("tasks-mcp", env!("CARGO_PKG_VERSION"))
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Serve {
-            mode,
-            host,
-            port,
-            no_dbus,
-        } => {
-            let server = McpServer::new();
+        Commands::Serve { common, no_dbus } => {
+            // One shared Storage handle backs both the MCP service and the
+            // D-Bus service, so both surfaces see identical task data. The
+            // per-connection `initialized` handshake state lives in mcp-core's
+            // `Session`; only the store is shared here.
+            let storage = Storage::new()?;
+            storage.ensure_root().await?;
+
+            let service = TasksService::new(storage.clone());
+            let core = ServerCore::new(server_config(), Arc::new(service));
+
+            // Run the D-Bus service concurrently with the MCP transport. A
+            // D-Bus failure (e.g. no session bus available) is logged but does
+            // not tear down the MCP server — the MCP transport drives process
+            // lifetime, exiting on EOF/shutdown as before.
             if !no_dbus {
-                let storage = server.storage().clone();
                 tokio::spawn(async move {
                     if let Err(e) = tasks_mcp::dbus::run_dbus_service(storage).await {
                         eprintln!("D-Bus service error: {e}");
                     }
                 });
             }
-            match mode {
-                TransportMode::Stdio => tasks_mcp::transport::run_stdio_server(server).await?,
-                TransportMode::Websocket => {
-                    tasks_mcp::transport::run_websocket_server(server, &host, port).await?
-                }
-            }
+
+            mcp_core::serve(core, &common)
+                .await
+                .map_err(|e| TaskMcpError::Internal(e.to_string()))?;
         }
         Commands::Dbus => {
-            let server = McpServer::new();
-            server.storage().ensure_root().await?;
-            tasks_mcp::dbus::run_dbus_service(server.storage().clone()).await?;
+            let storage = Storage::new()?;
+            storage.ensure_root().await?;
+            tasks_mcp::dbus::run_dbus_service(storage).await?;
         }
     }
 

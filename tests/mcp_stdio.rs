@@ -108,7 +108,9 @@ fn tools_list_requires_initialized_notification() {
         .get("error")
         .and_then(|v| v.get("code"))
         .and_then(Value::as_i64);
-    assert_eq!(code, Some(-32000));
+    // mcp-core reports "not initialized" with the JSON-RPC server-defined code
+    // -32002 (the pre-mcp-core server used -32000).
+    assert_eq!(code, Some(-32002));
 }
 
 #[test]

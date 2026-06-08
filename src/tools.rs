@@ -1,5 +1,6 @@
 #![deny(warnings)]
 
+use mcp_core::ToolDef;
 use serde_json::{Value, json};
 
 use crate::error::{Result, TaskMcpError};
@@ -9,28 +10,28 @@ use crate::operations::task_ops::{
     UpdateTaskInput, add_deliverable, add_external_ref, append_task_note, create_task, delete_task,
     get_task, list_tasks, remove_deliverable, repair_task_frontmatter, search_tasks, set_status,
 };
-use crate::server::McpServer;
+use crate::storage::Storage;
 
-pub fn tool_definitions() -> Vec<Value> {
+pub fn tool_definitions() -> Vec<ToolDef> {
     vec![
-        json!({
-            "name": "list_lists",
-            "description": "List available task lists/contexts.",
-            "inputSchema": {"type":"object","properties":{}}
-        }),
-        json!({
-            "name": "create_list",
-            "description": "Create a new task list with epics and deliverables directories.",
-            "inputSchema": {
+        ToolDef::new(
+            "list_lists",
+            "List available task lists/contexts.",
+            json!({"type":"object","properties":{}}),
+        ),
+        ToolDef::new(
+            "create_list",
+            "Create a new task list with epics and deliverables directories.",
+            json!({
                 "type":"object",
                 "properties":{"name":{"type":"string"}},
                 "required":["name"]
-            }
-        }),
-        json!({
-            "name": "create_task",
-            "description": "Create a new task markdown file.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "create_task",
+            "Create a new task markdown file.",
+            json!({
                 "type":"object",
                 "properties": {
                     "list": {"type":"string"},
@@ -47,23 +48,23 @@ pub fn tool_definitions() -> Vec<Value> {
                     "body": {"type":"string"}
                 },
                 "required": ["list", "type", "title"]
-            }
-        }),
-        json!({
-            "name": "get_task",
-            "description": "Get a task by id or path.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "get_task",
+            "Get a task by id or path.",
+            json!({
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
                     "path": {"type":"string"}
                 }
-            }
-        }),
-        json!({
-            "name": "update_task",
-            "description": "Update frontmatter/body fields and refresh updated timestamp. Use body_append or body_prepend to safely add text without replacing the full body.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "update_task",
+            "Update frontmatter/body fields and refresh updated timestamp. Use body_append or body_prepend to safely add text without replacing the full body.",
+            json!({
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
@@ -88,12 +89,12 @@ pub fn tool_definitions() -> Vec<Value> {
                     }
                 },
                 "required": ["patch"]
-            }
-        }),
-        json!({
-            "name": "set_status",
-            "description": "Set task status directly. Valid statuses: todo, doing, blocked, validating, done, canceled.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "set_status",
+            "Set task status directly. Valid statuses: todo, doing, blocked, validating, done, canceled.",
+            json!({
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
@@ -101,23 +102,23 @@ pub fn tool_definitions() -> Vec<Value> {
                     "status": {"type":"string","enum":["todo","doing","blocked","validating","done","canceled"]}
                 },
                 "required": ["status"]
-            }
-        }),
-        json!({
-            "name": "delete_task",
-            "description": "Delete a task by id or path.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "delete_task",
+            "Delete a task by id or path.",
+            json!({
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
                     "path": {"type":"string"}
                 }
-            }
-        }),
-        json!({
-            "name": "list_tasks",
-            "description": "List tasks across all lists or within a provided list subset.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "list_tasks",
+            "List tasks across all lists or within a provided list subset.",
+            json!({
                 "type":"object",
                 "properties": {
                     "list": {"type":"string"},
@@ -128,48 +129,48 @@ pub fn tool_definitions() -> Vec<Value> {
                     "assignee": {"type":"string"},
                     "epic_id": {"type":"string"}
                 }
-            }
-        }),
-        json!({
-            "name": "search_tasks",
-            "description": "Search task titles and bodies.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "search_tasks",
+            "Search task titles and bodies.",
+            json!({
                 "type":"object",
                 "properties": {
                     "text": {"type":"string"},
                     "lists": {"type":"array","items":{"type":"string"}}
                 },
                 "required": ["text"]
-            }
-        }),
-        json!({
-            "name": "add_deliverable",
-            "description": "Link a deliverable to an epic and keep both sides in sync.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "add_deliverable",
+            "Link a deliverable to an epic and keep both sides in sync.",
+            json!({
                 "type":"object",
                 "properties": {
                     "epic_id": {"type":"string"},
                     "deliverable_id": {"type":"string"}
                 },
                 "required": ["epic_id", "deliverable_id"]
-            }
-        }),
-        json!({
-            "name": "remove_deliverable",
-            "description": "Unlink a deliverable from an epic.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "remove_deliverable",
+            "Unlink a deliverable from an epic.",
+            json!({
                 "type":"object",
                 "properties": {
                     "epic_id": {"type":"string"},
                     "deliverable_id": {"type":"string"}
                 },
                 "required": ["epic_id", "deliverable_id"]
-            }
-        }),
-        json!({
-            "name": "append_task_note",
-            "description": "Append a freeform note to the task body without touching frontmatter. Safely handles Markdown special characters. Optionally insert under a named heading.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "append_task_note",
+            "Append a freeform note to the task body without touching frontmatter. Safely handles Markdown special characters. Optionally insert under a named heading.",
+            json!({
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
@@ -179,12 +180,12 @@ pub fn tool_definitions() -> Vec<Value> {
                     "timestamp": {"type":"boolean","description":"Prefix note with today's date (default: true)."}
                 },
                 "required": ["note"]
-            }
-        }),
-        json!({
-            "name": "add_external_ref",
-            "description": "Add a structured external ticket reference (e.g. Jira, GitHub) to a task's frontmatter. Deduplicates by system+ref.",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "add_external_ref",
+            "Add a structured external ticket reference (e.g. Jira, GitHub) to a task's frontmatter. Deduplicates by system+ref.",
+            json!({
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
@@ -194,12 +195,12 @@ pub fn tool_definitions() -> Vec<Value> {
                     "url": {"type":"string","description":"Optional URL to the ticket."}
                 },
                 "required": ["system", "ref"]
-            }
-        }),
-        json!({
-            "name": "repair_task_frontmatter",
-            "description": "Repair a task whose YAML frontmatter has become invalid. Use after corruption (e.g. from raw file edits).",
-            "inputSchema": {
+            }),
+        ),
+        ToolDef::new(
+            "repair_task_frontmatter",
+            "Repair a task whose YAML frontmatter has become invalid. Use after corruption (e.g. from raw file edits).",
+            json!({
                 "type":"object",
                 "properties": {
                     "id": {"type":"string"},
@@ -208,15 +209,15 @@ pub fn tool_definitions() -> Vec<Value> {
                     "dry_run": {"type":"boolean","description":"Return repaired content without writing to disk (default: false)."}
                 },
                 "required": ["strategy"]
-            }
-        }),
+            }),
+        ),
     ]
 }
 
-pub async fn call_tool(server: &McpServer, name: &str, arguments: Value) -> Result<Value> {
+pub async fn call_tool(storage: &Storage, name: &str, arguments: Value) -> Result<Value> {
     match name {
         "list_lists" => {
-            let lists = server.storage().list_lists().await?;
+            let lists = storage.list_lists().await?;
             Ok(json!(lists))
         }
         "create_list" => {
@@ -224,56 +225,56 @@ pub async fn call_tool(server: &McpServer, name: &str, arguments: Value) -> Resu
                 .get("name")
                 .and_then(Value::as_str)
                 .ok_or_else(|| TaskMcpError::InvalidArgument("name is required".to_string()))?;
-            server.storage().create_list(name).await?;
+            storage.create_list(name).await?;
             Ok(json!({"created": true, "name": name}))
         }
         "create_task" => {
             let input: CreateTaskInput = serde_json::from_value(arguments)?;
-            create_task(server.storage(), input).await
+            create_task(storage, input).await
         }
         "get_task" => {
             let locator: TaskLocator = serde_json::from_value(arguments)?;
-            get_task(server.storage(), locator).await
+            get_task(storage, locator).await
         }
         "update_task" => {
             let input: UpdateTaskInput = serde_json::from_value(arguments)?;
-            crate::operations::task_ops::update_task(server.storage(), input).await
+            crate::operations::task_ops::update_task(storage, input).await
         }
         "set_status" => {
             let input: SetStatusInput = serde_json::from_value(arguments)?;
-            set_status(server.storage(), input).await
+            set_status(storage, input).await
         }
         "delete_task" => {
             let input: DeleteTaskInput = serde_json::from_value(arguments)?;
-            delete_task(server.storage(), input).await
+            delete_task(storage, input).await
         }
         "list_tasks" => {
             let input: ListTasksInput = serde_json::from_value(arguments)?;
-            list_tasks(server.storage(), input).await
+            list_tasks(storage, input).await
         }
         "search_tasks" => {
             let input: SearchTasksInput = serde_json::from_value(arguments)?;
-            search_tasks(server.storage(), input).await
+            search_tasks(storage, input).await
         }
         "add_deliverable" => {
             let input: RelationshipInput = serde_json::from_value(arguments)?;
-            add_deliverable(server.storage(), input).await
+            add_deliverable(storage, input).await
         }
         "remove_deliverable" => {
             let input: RelationshipInput = serde_json::from_value(arguments)?;
-            remove_deliverable(server.storage(), input).await
+            remove_deliverable(storage, input).await
         }
         "append_task_note" => {
             let input: AppendTaskNoteInput = serde_json::from_value(arguments)?;
-            append_task_note(server.storage(), input).await
+            append_task_note(storage, input).await
         }
         "add_external_ref" => {
             let input: AddExternalRefInput = serde_json::from_value(arguments)?;
-            add_external_ref(server.storage(), input).await
+            add_external_ref(storage, input).await
         }
         "repair_task_frontmatter" => {
             let input: RepairTaskFrontmatterInput = serde_json::from_value(arguments)?;
-            repair_task_frontmatter(server.storage(), input).await
+            repair_task_frontmatter(storage, input).await
         }
         _ => Err(TaskMcpError::NotFound(format!("unknown tool: {name}"))),
     }

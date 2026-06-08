@@ -9,10 +9,9 @@ resolver = "3"
 members = ["."]
 
 [dependencies]
-axum = { version = "0.8.8", features = ["ws"] }
 chrono = { version = "0.4.43", features = ["clock"] }
 clap = { version = "4.5.54", features = ["derive", "env"] }
-futures-util = "0.3.31"
+mcp-core = { git = "https://github.com/adelie-ai/mcp-core", features = ["websocket"] }
 regex = "1.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

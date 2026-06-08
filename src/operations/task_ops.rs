@@ -530,111 +530,16 @@ pub async fn repair_task_frontmatter(
     // Split raw content into yaml_block and body_raw regardless of validity.
     let (yaml_block, body_raw) = split_raw_frontmatter(&raw);
 
+    let minimal = rebuild_minimal_frontmatter(&path);
     let repaired_content = match input.strategy {
         RepairStrategy::Salvage => {
             // Best-effort: move the broken YAML into the body under a recovery heading.
-            let id = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .and_then(|s| s.split('_').next())
-                .unwrap_or("unknown")
-                .to_string();
-            let list = path
-                .ancestors()
-                .nth(3)
-                .and_then(|p| p.file_name())
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let task_type = if path
-                .parent()
-                .and_then(|p| p.file_name())
-                .and_then(|s| s.to_str())
-                == Some("epics")
-            {
-                TaskType::Epic
-            } else {
-                TaskType::Deliverable
-            };
-            let title = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .and_then(|s| s.split_once('_').map(|(_, rest)| rest))
-                .unwrap_or("Recovered Task")
-                .replace('_', " ");
-            let now = now_iso8601();
-            let minimal = TaskFrontmatter {
-                id,
-                title,
-                task_type,
-                status: TaskStatus::Todo,
-                list,
-                created: now.clone(),
-                updated: now,
-                epic_id: None,
-                deliverable_ids: None,
-                tags: None,
-                priority: None,
-                due: None,
-                links: None,
-                assignee: None,
-                external_refs: None,
-            };
             let recovered_section =
                 format!("\n\n## Recovered Frontmatter\n\n```yaml\n{yaml_block}\n```");
             let new_body = format!("{body_raw}{recovered_section}");
             render_task_markdown(&minimal, &new_body)?
         }
-        RepairStrategy::Reset => {
-            let id = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .and_then(|s| s.split('_').next())
-                .unwrap_or("unknown")
-                .to_string();
-            let list = path
-                .ancestors()
-                .nth(3)
-                .and_then(|p| p.file_name())
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            let task_type = if path
-                .parent()
-                .and_then(|p| p.file_name())
-                .and_then(|s| s.to_str())
-                == Some("epics")
-            {
-                TaskType::Epic
-            } else {
-                TaskType::Deliverable
-            };
-            let title = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .and_then(|s| s.split_once('_').map(|(_, rest)| rest))
-                .unwrap_or("Recovered Task")
-                .replace('_', " ");
-            let now = now_iso8601();
-            let minimal = TaskFrontmatter {
-                id,
-                title,
-                task_type,
-                status: TaskStatus::Todo,
-                list,
-                created: now.clone(),
-                updated: now,
-                epic_id: None,
-                deliverable_ids: None,
-                tags: None,
-                priority: None,
-                due: None,
-                links: None,
-                assignee: None,
-                external_refs: None,
-            };
-            render_task_markdown(&minimal, &body_raw)?
-        }
+        RepairStrategy::Reset => render_task_markdown(&minimal, &body_raw)?,
     };
 
     if dry_run {
@@ -653,6 +558,56 @@ pub async fn repair_task_frontmatter(
         "dry_run": false,
         "path": path.to_string_lossy(),
     }))
+}
+
+/// Reconstruct a minimal [`TaskFrontmatter`] from the file path alone.
+///
+/// Filename format: `<id> - <slug>.md` under `<root>/<list>/<type>/`.
+/// - `id`   — the part before the first `" - "` separator in the stem.
+/// - `title` — the slug part after `" - "`, with `-` replaced by spaces.
+/// - `list`  — the directory two levels above the file (`ancestors().nth(2)`).
+fn rebuild_minimal_frontmatter(path: &Path) -> TaskFrontmatter {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let (id, title) = if let Some((left, right)) = stem.split_once(" - ") {
+        (left.to_string(), right.replace('-', " "))
+    } else {
+        (stem.to_string(), "Recovered Task".to_string())
+    };
+    let list = path
+        .ancestors()
+        .nth(2)
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let task_type = if path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        == Some("epics")
+    {
+        TaskType::Epic
+    } else {
+        TaskType::Deliverable
+    };
+    let now = now_iso8601();
+    TaskFrontmatter {
+        id,
+        title,
+        task_type,
+        status: TaskStatus::Todo,
+        list,
+        created: now.clone(),
+        updated: now,
+        epic_id: None,
+        deliverable_ids: None,
+        tags: None,
+        priority: None,
+        due: None,
+        links: None,
+        assignee: None,
+        external_refs: None,
+    }
 }
 
 /// Split raw file text into `(yaml_block, body)` without requiring the YAML to be valid.
@@ -698,7 +653,49 @@ async fn persist_task(storage: &Storage, task: &TaskDocument) -> Result<()> {
 async fn locate_task_path(storage: &Storage, locator: &TaskLocator) -> Result<PathBuf> {
     match (&locator.id, &locator.path) {
         (Some(id), None) => storage.find_task_path_by_id(id).await,
-        (None, Some(path)) => Ok(PathBuf::from(path)),
+        (None, Some(path)) => {
+            let candidate = PathBuf::from(path);
+            let root = storage.root();
+            // Canonicalize the root so symlinks and relative components in it
+            // are resolved.  Fall back to the raw path if the directory doesn't
+            // exist yet (first run, tests).
+            let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+            // For the candidate we first try to canonicalize (resolves `..` and
+            // symlinks).  When the file does not yet exist, canonicalize will
+            // fail, so we do a lexical normalization instead — walking the
+            // components and resolving `..` manually.
+            let canonical_candidate = if let Ok(p) = candidate.canonicalize() {
+                p
+            } else {
+                // Lexical normalization: resolve `..` without touching the
+                // filesystem.
+                let mut normalized = PathBuf::new();
+                let abs = if candidate.is_absolute() {
+                    candidate.clone()
+                } else {
+                    std::env::current_dir().unwrap_or_default().join(&candidate)
+                };
+                for component in abs.components() {
+                    use std::path::Component;
+                    match component {
+                        Component::ParentDir => {
+                            normalized.pop();
+                        }
+                        Component::CurDir => {}
+                        other => normalized.push(other),
+                    }
+                }
+                normalized
+            };
+            if !canonical_candidate.starts_with(&canonical_root) {
+                return Err(TaskMcpError::InvalidArgument(format!(
+                    "path '{}' is outside the tasks root '{}'",
+                    candidate.display(),
+                    root.display(),
+                )));
+            }
+            Ok(canonical_candidate)
+        }
         (Some(_), Some(_)) => Err(TaskMcpError::InvalidArgument(
             "provide either id or path, not both".to_string(),
         )),
@@ -772,4 +769,66 @@ fn apply_patch(document: &mut TaskDocument, patch: &Value) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{TaskLocator, rebuild_minimal_frontmatter};
+    use crate::storage::Storage;
+
+    /// rebuild_minimal_frontmatter must extract the correct id and list from a
+    /// real task path.  Filename format: `<id> - <slug>.md` under
+    /// `<root>/<list>/<type>/`.
+    #[test]
+    fn rebuild_minimal_frontmatter_id_and_list_round_trip() {
+        let path = Path::new(
+            "/home/user/.local/share/desktop-assistant/tasks/work/deliverables/tsk-20260218-154455 - my-slug.md",
+        );
+        let fm = rebuild_minimal_frontmatter(path);
+        assert_eq!(
+            fm.id, "tsk-20260218-154455",
+            "id must equal the prefix before ' - '"
+        );
+        assert_eq!(
+            fm.list, "work",
+            "list must be the directory two levels above the file"
+        );
+        assert_eq!(fm.title, "my slug", "title must be the slug with '-' → ' '");
+    }
+
+    /// A stem without the ' - ' separator should not panic and produce a
+    /// reasonable fallback.
+    #[test]
+    fn rebuild_minimal_frontmatter_no_separator_fallback() {
+        let path = Path::new("/tasks/mylist/epics/somefile.md");
+        let fm = rebuild_minimal_frontmatter(path);
+        assert_eq!(
+            fm.id, "somefile",
+            "id is the whole stem when there is no ' - '"
+        );
+        assert_eq!(fm.title, "Recovered Task");
+        assert_eq!(fm.list, "mylist");
+    }
+
+    /// Path locator must reject paths that escape the storage root.
+    #[tokio::test]
+    async fn locate_task_path_rejects_out_of_root() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path().join("tasks");
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        let storage = Storage::with_root(&root);
+
+        // A path that starts with the root prefix but then escapes via ".."
+        let escape = format!("{}/../../etc/passwd", root.display());
+        let locator = TaskLocator {
+            id: None,
+            path: Some(escape),
+        };
+        let result = super::locate_task_path(&storage, &locator).await;
+        assert!(result.is_err(), "out-of-root path must be rejected");
+    }
 }

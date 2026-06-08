@@ -8,27 +8,31 @@ use tokio::sync::RwLock;
 use crate::error::Result;
 use crate::storage::Storage;
 
+/// Per-connection initialized state.
+///
+/// The MCP `initialize` / `notifications/initialized` handshake is
+/// per-connection.  Each transport connection (stdio session, WebSocket
+/// connection) should hold its own `ConnectionState` so that multiple
+/// concurrent WebSocket clients do not share initialization flags.
+pub type ConnectionState = Arc<RwLock<bool>>;
+
+pub fn new_connection_state() -> ConnectionState {
+    Arc::new(RwLock::new(false))
+}
+
 #[derive(Debug, Clone)]
 pub struct McpServer {
-    initialized: Arc<RwLock<bool>>,
     storage: Storage,
 }
 
 impl McpServer {
     pub fn new() -> Self {
         let storage = Storage::new().expect("storage initialization must not fail");
-        Self {
-            initialized: Arc::new(RwLock::new(false)),
-            storage,
-        }
+        Self { storage }
     }
 
     pub fn storage(&self) -> &Storage {
         &self.storage
-    }
-
-    pub async fn is_initialized(&self) -> bool {
-        *self.initialized.read().await
     }
 
     pub async fn handle_initialize(
@@ -47,12 +51,6 @@ impl McpServer {
                 "version": env!("CARGO_PKG_VERSION")
             }
         }))
-    }
-
-    pub async fn handle_initialized(&self) -> Result<()> {
-        let mut guard = self.initialized.write().await;
-        *guard = true;
-        Ok(())
     }
 
     pub fn list_tools(&self) -> Vec<Value> {

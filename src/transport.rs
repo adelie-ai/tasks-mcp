@@ -13,7 +13,7 @@ use tokio::io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, S
 use tokio::net::TcpListener;
 
 use crate::error::{Result, TaskMcpError, TransportError};
-use crate::server::McpServer;
+use crate::server::{McpServer, new_connection_state};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StdioFraming {
@@ -203,6 +203,7 @@ impl StdioTransportHandler {
 
 pub async fn run_stdio_server(server: McpServer) -> Result<()> {
     let server = Arc::new(server);
+    let conn_state = new_connection_state();
     let mut transport = StdioTransportHandler::new();
 
     loop {
@@ -229,7 +230,9 @@ pub async fn run_stdio_server(server: McpServer) -> Result<()> {
             }
         };
 
-        if let Some(response) = handle_jsonrpc_message(server.clone(), message).await {
+        if let Some(response) =
+            handle_jsonrpc_message(server.clone(), conn_state.clone(), message).await
+        {
             let serialized = serde_json::to_string(&response)?;
             transport.write_message(&serialized).await?;
         }
@@ -259,6 +262,10 @@ async fn websocket_handler(ws: WebSocketUpgrade, State(server): State<Arc<McpSer
 async fn handle_websocket_connection(socket: axum::extract::ws::WebSocket, server: Arc<McpServer>) {
     use axum::extract::ws::Message;
 
+    // Each WebSocket connection gets its own initialization state so that
+    // concurrent clients don't share a single `initialized` flag.
+    let conn_state = new_connection_state();
+
     let (mut sender, mut receiver) = socket.split();
 
     while let Some(msg) = receiver.next().await {
@@ -280,7 +287,8 @@ async fn handle_websocket_connection(socket: axum::extract::ws::WebSocket, serve
                     }
                 };
 
-                if let Some(response) = handle_jsonrpc_message(server.clone(), message).await
+                if let Some(response) =
+                    handle_jsonrpc_message(server.clone(), conn_state.clone(), message).await
                     && let Ok(serialized) = serde_json::to_string(&response)
                 {
                     let _ = sender.send(Message::Text(serialized.into())).await;
@@ -296,7 +304,11 @@ async fn handle_websocket_connection(socket: axum::extract::ws::WebSocket, serve
     }
 }
 
-async fn handle_jsonrpc_message(server: Arc<McpServer>, message: Value) -> Option<Value> {
+async fn handle_jsonrpc_message(
+    server: Arc<McpServer>,
+    conn_state: crate::server::ConnectionState,
+    message: Value,
+) -> Option<Value> {
     if let Some(version) = message.get("jsonrpc").and_then(Value::as_str)
         && version != "2.0"
     {
@@ -326,13 +338,12 @@ async fn handle_jsonrpc_message(server: Arc<McpServer>, message: Value) -> Optio
                 .await
         }
         Some("initialized") | Some("notifications/initialized") => {
-            match server.handle_initialized().await {
-                Ok(_) => Ok(Value::Null),
-                Err(error) => Err(error),
-            }
+            let mut guard = conn_state.write().await;
+            *guard = true;
+            Ok(Value::Null)
         }
         Some("tools/list") => {
-            if !server.is_initialized().await {
+            if !*conn_state.read().await {
                 return Some(jsonrpc_error_response(
                     id,
                     -32000,
@@ -343,7 +354,7 @@ async fn handle_jsonrpc_message(server: Arc<McpServer>, message: Value) -> Optio
             Ok(json!({"tools": server.list_tools()}))
         }
         Some("tools/call") => {
-            if !server.is_initialized().await {
+            if !*conn_state.read().await {
                 return Some(jsonrpc_error_response(
                     id,
                     -32000,

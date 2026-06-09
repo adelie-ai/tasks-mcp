@@ -12,7 +12,7 @@ use tasks_mcp::storage::Storage;
 #[command(name = "tasks-mcp")]
 #[command(about = "Tasks MCP Server")]
 #[command(
-    long_about = "tasks-mcp provides task storage and management over MCP for LLM orchestrators.\n\nUsage:\n  tasks-mcp serve --mode stdio\n  tasks-mcp serve --mode websocket --host 0.0.0.0 --port 8080\n  tasks-mcp dbus       # D-Bus only (used by D-Bus activation)"
+    long_about = "tasks-mcp provides task storage and management over MCP for LLM orchestrators.\n\nUsage:\n  tasks-mcp serve --mode stdio\n  tasks-mcp dbus       # D-Bus only (used by D-Bus activation)"
 )]
 #[command(version)]
 struct Cli {
@@ -22,7 +22,7 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
-    /// Run an MCP transport (stdio/websocket/unix) with the D-Bus service also active.
+    /// Run an MCP transport (stdio/unix) with the D-Bus service also active.
     Serve {
         /// Transport-selection flags (`--transport`/`--mode`, `--host`, `--port`, `--socket-path`).
         #[command(flatten)]
@@ -35,10 +35,15 @@ enum Commands {
     Dbus,
 }
 
-/// The MCP server configuration handed to mcp-core. Stdio (the default) plus
-/// websocket, matching the transports tasks-mcp has historically exposed.
+/// The MCP server configuration handed to mcp-core. Stdio only (plus the
+/// separate D-Bus surface).
+///
+/// MF-12: the websocket transport is refused — mcp-core's ws transport is
+/// unauthenticated, so `serve --transport websocket --host 0.0.0.0` would
+/// expose every task read/write to anyone who can reach the port. tasks-mcp
+/// is stdio-served (and D-Bus-served) in practice.
 fn server_config() -> ServerConfig {
-    ServerConfig::new("tasks-mcp", env!("CARGO_PKG_VERSION"))
+    ServerConfig::new("tasks-mcp", env!("CARGO_PKG_VERSION")).without_websocket()
 }
 
 #[tokio::main]

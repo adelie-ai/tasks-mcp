@@ -918,3 +918,78 @@ async fn set_status_validating_and_list_filter() {
     assert_eq!(validating_tasks.as_array().map(Vec::len), Some(1));
     assert_eq!(validating_tasks[0]["status"].as_str(), Some("validating"));
 }
+
+/// Regression for #12: an `update_task` patch that sets `priority` to a value
+/// from the advertised vocabulary (`p1`) must deserialize into `Priority::P1`
+/// and round-trip through storage. A model following `update_task`'s schema
+/// must be able to set a priority.
+#[tokio::test]
+async fn update_task_priority_p1_round_trips() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops"))
+        .await
+        .expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    update_task(
+        &storage,
+        UpdateTaskInput {
+            locator: TaskLocator {
+                id: Some(id.clone()),
+                path: None,
+            },
+            patch: json!({"priority": "p1"}),
+        },
+    )
+    .await
+    .expect("update priority to p1");
+
+    let fetched = get_task(
+        &storage,
+        TaskLocator {
+            id: Some(id),
+            path: None,
+        },
+    )
+    .await
+    .expect("get task");
+
+    // `Priority` serializes with `rename_all = "lowercase"`, so a stored
+    // `Priority::P1` surfaces as `"p1"`.
+    assert_eq!(
+        fetched["frontmatter"]["priority"].as_str(),
+        Some("p1"),
+        "priority set to p1 must round-trip as Priority::P1"
+    );
+}
+
+/// The old, mismatched vocabulary (`low/medium/high/critical`) that
+/// `update_task` used to advertise never deserialized into `Priority`; setting
+/// it must fail loudly rather than silently corrupt the task.
+#[tokio::test]
+async fn update_task_rejects_stale_priority_vocabulary() {
+    let (_dir, storage) = test_storage();
+
+    let created = create_task(&storage, make_task("ops"))
+        .await
+        .expect("create");
+    let id = created["id"].as_str().expect("id").to_string();
+
+    let result = update_task(
+        &storage,
+        UpdateTaskInput {
+            locator: TaskLocator {
+                id: Some(id),
+                path: None,
+            },
+            patch: json!({"priority": "high"}),
+        },
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "priority `high` is not a valid Priority and must be rejected"
+    );
+}

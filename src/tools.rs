@@ -337,3 +337,99 @@ mod description_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod schema_tests {
+    use super::tool_definitions;
+    use serde_json::Value;
+
+    fn input_schema(name: &str) -> Value {
+        tool_definitions()
+            .into_iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("tool `{name}` must be defined"))
+            .input_schema
+    }
+
+    /// Sorted set of the non-null string values in a `priority` `enum` array,
+    /// i.e. the vocabulary the schema tells a model it may send.
+    fn priority_vocabulary(enum_values: &Value) -> Vec<String> {
+        let mut vocab: Vec<String> = enum_values
+            .as_array()
+            .expect("priority `enum` must be an array")
+            .iter()
+            .filter_map(|value| value.as_str().map(str::to_string))
+            .collect();
+        vocab.sort();
+        vocab
+    }
+
+    fn create_priority_enum() -> Value {
+        input_schema("create_task")["properties"]["priority"]["enum"].clone()
+    }
+
+    fn update_priority_enum() -> Value {
+        input_schema("update_task")["properties"]["patch"]["properties"]["priority"]["enum"].clone()
+    }
+
+    /// The domain `Priority` vocabulary is `p0..p3`. Both `create_task` and
+    /// `update_task` must advertise exactly that vocabulary, so a model that
+    /// follows either schema sends a value that deserializes into `Priority`.
+    ///
+    /// Regression for #12: `update_task` advertised `low/medium/high/critical`,
+    /// which matches neither `create_task` nor the `Priority` type.
+    #[test]
+    fn create_and_update_advertise_the_same_priority_vocabulary() {
+        let create = priority_vocabulary(&create_priority_enum());
+        let update = priority_vocabulary(&update_priority_enum());
+        let expected = vec![
+            "p0".to_string(),
+            "p1".to_string(),
+            "p2".to_string(),
+            "p3".to_string(),
+        ];
+        assert_eq!(
+            create, expected,
+            "create_task must advertise the p0-p3 priority vocabulary"
+        );
+        assert_eq!(
+            update, expected,
+            "update_task must advertise the same p0-p3 vocabulary as create_task"
+        );
+        assert_eq!(
+            create, update,
+            "create_task and update_task must advertise identical priority vocabularies"
+        );
+    }
+
+    /// `update_task` must still allow clearing the priority by sending `null`,
+    /// while `create_task` (which cannot clear an absent field) does not.
+    #[test]
+    fn update_task_priority_enum_allows_null_to_clear() {
+        let update = update_priority_enum();
+        let has_null = update
+            .as_array()
+            .expect("priority `enum` must be an array")
+            .iter()
+            .any(Value::is_null);
+        assert!(
+            has_null,
+            "update_task priority enum must include null so a model can clear the field, got: {update}"
+        );
+    }
+
+    /// The old, broken vocabulary must not reappear in either schema.
+    #[test]
+    fn priority_enums_reject_low_medium_high_critical() {
+        for tool in ["create_task", "update_task"] {
+            let schema = input_schema(tool);
+            let rendered = schema.to_string();
+            for stale in ["low", "medium", "high", "critical"] {
+                assert!(
+                    !rendered.contains(&format!("\"{stale}\"")),
+                    "{tool} schema must not advertise the stale priority value `{stale}`"
+                );
+            }
+        }
+    }
+}

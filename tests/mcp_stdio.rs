@@ -114,6 +114,36 @@ fn tools_list_requires_initialized_notification() {
 }
 
 #[test]
+fn initialize_advertises_instructions() {
+    let root = test_temp_root();
+    let mut client = StdioMcpClient::spawn(root.path());
+
+    let initialize = client.request(
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "test", "version": "0.1.0"}
+        }),
+    );
+
+    let instructions = initialize
+        .get("result")
+        .and_then(|v| v.get("instructions"))
+        .and_then(Value::as_str)
+        .expect("initialize response must carry a non-empty instructions string");
+    assert!(
+        !instructions.trim().is_empty(),
+        "instructions must not be empty or whitespace"
+    );
+    assert!(
+        instructions.to_lowercase().contains("task"),
+        "instructions should describe task tracking, got: {instructions}"
+    );
+}
+
+#[test]
 fn stdio_end_to_end_mcp_flow() {
     let root = test_temp_root();
     let mut client = StdioMcpClient::spawn(root.path());

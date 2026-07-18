@@ -26,3 +26,41 @@ use mcp_core::ServerConfig;
 pub fn server_config() -> ServerConfig {
     ServerConfig::new("tasks-mcp", env!("CARGO_PKG_VERSION")).without_websocket()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::server_config;
+
+    /// The server must advertise a non-empty `instructions` blurb so the
+    /// orchestrator has a server-level description to index for tool discovery.
+    #[test]
+    fn server_config_exposes_non_empty_instructions() {
+        let instructions = server_config()
+            .instructions
+            .expect("server_config() must set MCP instructions");
+        assert!(
+            !instructions.trim().is_empty(),
+            "instructions must not be empty or whitespace"
+        );
+    }
+
+    /// The blurb must convey the task-tracking purpose and name the core
+    /// discovery and write tools so it aids server- and tool-level selection.
+    #[test]
+    fn instructions_mentions_key_tools_and_purpose() {
+        let instructions = server_config()
+            .instructions
+            .expect("server_config() must set MCP instructions")
+            .to_lowercase();
+        assert!(
+            instructions.contains("task"),
+            "instructions should describe task tracking"
+        );
+        for tool in ["list_tasks", "search_tasks", "create_task", "set_status"] {
+            assert!(
+                instructions.contains(tool),
+                "instructions should name the `{tool}` tool for discovery"
+            );
+        }
+    }
+}

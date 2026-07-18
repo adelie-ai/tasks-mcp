@@ -214,6 +214,64 @@ pub fn tool_definitions() -> Vec<ToolDef> {
     ]
 }
 
+#[cfg(test)]
+mod description_tests {
+    use super::tool_definitions;
+
+    fn description_for(name: &str) -> String {
+        tool_definitions()
+            .into_iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("tool `{name}` must be defined"))
+            .description
+            .to_lowercase()
+    }
+
+    /// `create_task` should read as "add a to-do / work item", not
+    /// "create a markdown file" (mechanism-first).
+    #[test]
+    fn create_task_description_leads_with_purpose() {
+        let desc = description_for("create_task");
+        assert!(
+            desc.contains("to-do") || desc.contains("work item"),
+            "create_task should describe adding a to-do / work item, got: {desc}"
+        );
+    }
+
+    /// `update_task` should read as "edit a task's fields", not
+    /// "update frontmatter/body fields" (mechanism-first), while keeping the
+    /// body_append / body_prepend guidance.
+    #[test]
+    fn update_task_description_leads_with_purpose() {
+        let desc = description_for("update_task");
+        assert!(
+            desc.contains("edit a task"),
+            "update_task should lead with editing a task's fields, got: {desc}"
+        );
+        assert!(
+            desc.contains("body_append") && desc.contains("body_prepend"),
+            "update_task must keep the safe-append guidance, got: {desc}"
+        );
+    }
+
+    /// `list_tasks` should surface its filtering power so the model knows it
+    /// can narrow by status, tag, assignee, etc.
+    #[test]
+    fn list_tasks_description_advertises_filters() {
+        let desc = description_for("list_tasks");
+        assert!(
+            desc.contains("filter"),
+            "list_tasks should advertise filtering, got: {desc}"
+        );
+        for term in ["status", "tag", "assignee"] {
+            assert!(
+                desc.contains(term),
+                "list_tasks should mention the `{term}` filter, got: {desc}"
+            );
+        }
+    }
+}
+
 pub async fn call_tool(storage: &Storage, name: &str, arguments: Value) -> Result<Value> {
     match name {
         "list_lists" => {

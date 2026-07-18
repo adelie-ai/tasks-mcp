@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use mcp_core::{CommonServeArgs, ServerConfig, ServerCore};
+use mcp_core::{CommonServeArgs, ServerCore};
 use tasks_mcp::error::{Result, TaskMcpError};
+use tasks_mcp::server_config;
 use tasks_mcp::service::TasksService;
 use tasks_mcp::storage::Storage;
 
@@ -33,17 +34,6 @@ enum Commands {
     },
     /// Run the D-Bus service only (used by D-Bus activation files).
     Dbus,
-}
-
-/// The MCP server configuration handed to mcp-core. Stdio only (plus the
-/// separate D-Bus surface).
-///
-/// MF-12: the websocket transport is refused — mcp-core's ws transport is
-/// unauthenticated, so `serve --transport websocket --host 0.0.0.0` would
-/// expose every task read/write to anyone who can reach the port. tasks-mcp
-/// is stdio-served (and D-Bus-served) in practice.
-fn server_config() -> ServerConfig {
-    ServerConfig::new("tasks-mcp", env!("CARGO_PKG_VERSION")).without_websocket()
 }
 
 #[tokio::main]

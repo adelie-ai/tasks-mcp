@@ -76,7 +76,7 @@ pub fn tool_definitions() -> Vec<ToolDef> {
                             "title": {"type":"string","description":"New task title."},
                             "status": {"type":"string","enum":["todo","doing","blocked","validating","done","canceled"],"description":"New task status."},
                             "tags": {"type":["array","null"],"items":{"type":"string"},"description":"Replace the tag list (null to clear)."},
-                            "priority": {"type":["string","null"],"enum":["low","medium","high","critical",null],"description":"Task priority (null to clear)."},
+                            "priority": {"type":["string","null"],"enum":["p0","p1","p2","p3",null],"description":"Task priority (null to clear)."},
                             "due": {"type":["string","null"],"description":"Due date as ISO 8601 string (null to clear)."},
                             "links": {"type":["array","null"],"items":{"type":"string"},"description":"Replace the links list (null to clear)."},
                             "assignee": {"type":["string","null"],"description":"Assignee identifier (null to clear)."},

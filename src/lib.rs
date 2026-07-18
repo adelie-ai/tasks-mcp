@@ -24,7 +24,21 @@ use mcp_core::ServerConfig;
 /// it doubles as the server-level tool-discovery hint (what this is / when to
 /// reach for it).
 pub fn server_config() -> ServerConfig {
-    ServerConfig::new("tasks-mcp", env!("CARGO_PKG_VERSION")).without_websocket()
+    ServerConfig::new("tasks-mcp", env!("CARGO_PKG_VERSION"))
+        .without_websocket()
+        .instructions(
+            "Local task and project tracker: captures to-dos as Markdown files (with YAML \
+             frontmatter) under the user's local data directory, organized into named lists \
+             with a two-level epic -> deliverable hierarchy. Reach for it whenever the user \
+             wants to capture, find, or update work items - adding a task, checking what is on \
+             their list, marking something done, tracking what they are working on, or planning \
+             a project. Discover with list_lists and list_tasks / search_tasks, then use \
+             create_task, set_status, update_task, and append_task_note to record progress; \
+             every task is addressed by id or path and moves through the statuses todo, doing, \
+             blocked, validating, done, and canceled. It operates purely on local files with no \
+             external accounts or network - add_external_ref only records a link to an outside \
+             ticket (e.g. Jira or GitHub) and does not sync with those systems.",
+        )
 }
 
 #[cfg(test)]

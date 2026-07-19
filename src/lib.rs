@@ -11,6 +11,28 @@ pub mod tools;
 
 use mcp_core::ServerConfig;
 
+pub use crate::service::TasksService;
+
+use crate::error::Result;
+use crate::storage::Storage;
+
+/// Construct the [`TasksService`] with built-in defaults for in-process hosting
+/// (da#538 Phase C).
+///
+/// This is the single default construction path for the MCP service: the
+/// standalone `serve` binary routes through it, and an in-process host (the
+/// daemon compiling this server in) can call it with zero configuration.
+///
+/// Why: the store root is resolved by [`Storage::new`] from the `TASKS_MCP_ROOT`
+/// environment variable, falling back to the default local data directory when
+/// unset - the same root the binary uses with no extra flags. The task
+/// directory is created lazily on first use, so construction has no filesystem
+/// side effect.
+pub fn build_service() -> Result<TasksService> {
+    let storage = Storage::new()?;
+    Ok(TasksService::new(storage))
+}
+
 /// The MCP server configuration handed to `mcp-core`. Stdio only (plus the
 /// separate D-Bus surface).
 ///

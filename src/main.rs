@@ -6,7 +6,6 @@ use clap::Parser;
 use mcp_core::{CommonServeArgs, ServerCore};
 use tasks_mcp::error::{Result, TaskMcpError};
 use tasks_mcp::server_config;
-use tasks_mcp::service::TasksService;
 use tasks_mcp::storage::Storage;
 
 #[derive(Parser)]
@@ -42,14 +41,16 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Serve { common, no_dbus } => {
-            // One shared Storage handle backs both the MCP service and the
-            // D-Bus service, so both surfaces see identical task data. The
-            // per-connection `initialized` handshake state lives in mcp-core's
-            // `Session`; only the store is shared here.
-            let storage = Storage::new()?;
+            // The MCP service is built through the shared zero-config
+            // constructor so the binary and in-process hosts share one default
+            // construction path (da#538). One Storage handle backs both the MCP
+            // service and the D-Bus service, so both surfaces see identical task
+            // data; the per-connection `initialized` handshake state lives in
+            // mcp-core's `Session`.
+            let service = tasks_mcp::build_service()?;
+            let storage = service.storage().clone();
             storage.ensure_root().await?;
 
-            let service = TasksService::new(storage.clone());
             let core = ServerCore::new(server_config(), Arc::new(service));
 
             // Run the D-Bus service concurrently with the MCP transport. A

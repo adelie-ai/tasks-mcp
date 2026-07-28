@@ -34,12 +34,18 @@ impl TasksService {
 
 /// Map a domain error to the appropriate [`CallError`].
 ///
-/// Argument (de)serialization failures are genuine protocol faults
-/// (`-32602`); everything else is a tool-level failure the model should see
-/// and react to (surfaced by the core as `isError: true` content).
+/// The split is *can the caller do anything about it*. Bad arguments and every
+/// domain failure become `isError` content the model can read and correct
+/// (SEP-1303); only a fault on our own side stays a protocol error.
+///
+/// Why the two JSON variants matter: a failure serializing our own reply is a
+/// bug here, not bad input. Reporting it as invalid params tells the model to
+/// rewrite arguments that were already correct, and since SEP-1303 that message
+/// is shown to the model rather than merely logged.
 fn to_call_error(err: TaskMcpError) -> CallError {
     match err {
-        TaskMcpError::Json(_) => CallError::invalid_params(err.to_string()),
+        TaskMcpError::ArgumentJson(_) => CallError::invalid_params(err.to_string()),
+        TaskMcpError::ResultSerialization(_) => CallError::internal(err.to_string()),
         other => CallError::tool(other.to_string()),
     }
 }
@@ -55,5 +61,60 @@ impl McpService for TasksService {
             .await
             .map_err(to_call_error)?;
         Ok(ToolReply::json(&value)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bad model-supplied arguments must stay `InvalidParams`, which mcp-core
+    /// surfaces as `isError` content the model can read and correct (SEP-1303).
+    #[test]
+    fn bad_tool_arguments_map_to_invalid_params() {
+        let err = serde_json::from_str::<crate::operations::task_ops::TaskLocator>("{\"id\": 42}")
+            .expect_err("a numeric id must fail to deserialize");
+        assert!(
+            matches!(
+                to_call_error(TaskMcpError::from(err)),
+                CallError::InvalidParams(_)
+            ),
+            "argument deserialization is the model's fault"
+        );
+    }
+
+    /// A failure serializing *our own* reply is a server fault. Reporting it as
+    /// invalid params tells the model to rewrite arguments that were fine, and
+    /// since SEP-1303 that message is shown to the model rather than merely
+    /// logged — so the misclassification actively wastes turns.
+    #[test]
+    fn reply_serialization_failure_maps_to_internal() {
+        // A non-string map key is one of the few things serde_json genuinely
+        // refuses to serialize, so this exercises the real helper rather than a
+        // hand-built variant.
+        let mut unserializable = std::collections::BTreeMap::new();
+        unserializable.insert((1u8, 2u8), 3u8);
+        let err = crate::error::serialize_result(&unserializable)
+            .expect_err("a non-string map key cannot serialize to JSON");
+        assert!(
+            matches!(err, TaskMcpError::ResultSerialization(_)),
+            "serialize_result must not classify our own fault as bad arguments: {err:?}"
+        );
+        assert!(
+            matches!(to_call_error(err), CallError::Internal(_)),
+            "our own serialization fault is not something the model can fix"
+        );
+    }
+
+    /// Every other domain error stays a tool-level failure.
+    #[test]
+    fn domain_errors_stay_tool_errors() {
+        for err in [
+            TaskMcpError::NotFound("task-1".into()),
+            TaskMcpError::Conflict("already exists".into()),
+            TaskMcpError::InvalidArgument("bad".into()),
+        ] {
+            assert!(matches!(to_call_error(err), CallError::Tool(_)));
+        }
     }
 }

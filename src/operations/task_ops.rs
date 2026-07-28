@@ -189,7 +189,7 @@ pub async fn create_task(storage: &Storage, input: CreateTaskInput) -> Result<Va
 pub async fn get_task(storage: &Storage, locator: TaskLocator) -> Result<Value> {
     let path = locate_task_path(storage, &locator).await?;
     let document = read_task_from_path(&path).await?;
-    Ok(serde_json::to_value(document)?)
+    crate::error::serialize_result(&document)
 }
 
 pub async fn update_task(storage: &Storage, input: UpdateTaskInput) -> Result<Value> {
@@ -300,7 +300,7 @@ pub async fn list_tasks(storage: &Storage, input: ListTasksInput) -> Result<Valu
         summaries.push(TaskSummary::from(&task));
     }
 
-    Ok(serde_json::to_value(summaries)?)
+    crate::error::serialize_result(&summaries)
 }
 
 pub async fn search_tasks(storage: &Storage, input: SearchTasksInput) -> Result<Value> {
@@ -334,7 +334,7 @@ pub async fn search_tasks(storage: &Storage, input: SearchTasksInput) -> Result<
         }
     }
 
-    Ok(serde_json::to_value(matches)?)
+    crate::error::serialize_result(&matches)
 }
 
 pub async fn add_deliverable(storage: &Storage, input: RelationshipInput) -> Result<Value> {

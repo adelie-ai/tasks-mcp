@@ -57,3 +57,51 @@ impl McpService for TasksService {
         Ok(ToolReply::json(&value)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bad model-supplied arguments must stay `InvalidParams`, which mcp-core
+    /// surfaces as `isError` content the model can read and correct (SEP-1303).
+    #[test]
+    fn bad_tool_arguments_map_to_invalid_params() {
+        let err = serde_json::from_str::<crate::operations::task_ops::TaskLocator>("{\"id\": 42}")
+            .expect_err("a numeric id must fail to deserialize");
+        assert!(
+            matches!(
+                to_call_error(TaskMcpError::from(err)),
+                CallError::InvalidParams(_)
+            ),
+            "argument deserialization is the model's fault"
+        );
+    }
+
+    /// A failure serializing *our own* reply is a server fault. Reporting it as
+    /// invalid params tells the model to rewrite arguments that were fine, and
+    /// since SEP-1303 that message is shown to the model rather than merely
+    /// logged — so the misclassification actively wastes turns.
+    #[test]
+    fn reply_serialization_failure_maps_to_internal() {
+        let err = serde_json::to_value(f64::NAN).expect_err("NaN is not valid JSON");
+        assert!(
+            matches!(
+                to_call_error(TaskMcpError::ResultSerialization(err.to_string())),
+                CallError::Internal(_)
+            ),
+            "our own serialization fault is not something the model can fix"
+        );
+    }
+
+    /// Every other domain error stays a tool-level failure.
+    #[test]
+    fn domain_errors_stay_tool_errors() {
+        for err in [
+            TaskMcpError::NotFound("task-1".into()),
+            TaskMcpError::Conflict("already exists".into()),
+            TaskMcpError::InvalidArgument("bad".into()),
+        ] {
+            assert!(matches!(to_call_error(err), CallError::Tool(_)));
+        }
+    }
+}

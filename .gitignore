@@ -1,2 +1,5 @@
 target
 .qmlls.ini
+
+# Gate and build output, never committed.
+*.log

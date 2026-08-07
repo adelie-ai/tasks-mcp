@@ -791,36 +791,55 @@ mod tests {
         format!("sentinel-dbus-leak-check-8f3a1c2e-{operation}")
     }
 
-    /// Every operation `TasksInterface` exposes on the D-Bus surface.
+    /// Every D-Bus method name `TasksInterface` really exposes, in
+    /// `record_dbus_call`'s snake_case operation vocabulary, derived from
+    /// zbus's own introspection XML rather than hand-maintained.
     ///
-    /// This is a hand-maintained manifest, not derived from a live,
-    /// introspectable source the way the MCP test derives its list from
-    /// `tool_definitions()` — zbus's `#[interface]` macro does not expose the
-    /// method list to a unit test. Adding a fifteenth D-Bus method without
-    /// adding it here and to `run_dbus_content_leak_flow` below will not fail
-    /// to compile or fail this test; it relies on the diff being visible in
-    /// review. Keep the two in sync.
-    const DBUS_OPERATIONS: &[&str] = &[
-        "list_lists",
-        "list_tasks",
-        "get_task",
-        "search_tasks",
-        "create_list",
-        "create_task",
-        "update_task",
-        "set_status",
-        "delete_task",
-        "add_deliverable",
-        "remove_deliverable",
-        "append_task_note",
-        "add_external_ref",
-        "repair_task_frontmatter",
-    ];
+    /// A hand-maintained list can drift from the interface it describes: a
+    /// method added to the `#[interface]` impl and never added to a
+    /// hand-written array still compiles and still passes a coverage test
+    /// built from that array, because nothing forces the two to agree. This
+    /// reads the same metadata the `#[interface]` macro generates for
+    /// `org.freedesktop.DBus.Introspectable`, so the derivation *is* the
+    /// interface — a fifteenth method shows up here the moment it exists,
+    /// with no second place to remember to update.
+    fn introspected_operations(interface: &TasksInterface) -> std::collections::BTreeSet<String> {
+        use zbus::object_server::Interface as ZbusInterface;
 
-    /// Call every operation in [`DBUS_OPERATIONS`] on `interface`, in an
-    /// order that satisfies each one's own data dependencies, planting a
-    /// distinct sentinel in each call that takes a content-bearing argument.
-    /// Returns every sentinel planted, so the caller can assert none of them
+        let mut xml = String::new();
+        <TasksInterface as ZbusInterface>::introspect_to_writer(interface, &mut xml, 0);
+
+        xml.lines()
+            .filter_map(|line| {
+                let rest = line.trim().strip_prefix("<method name=\"")?;
+                let end = rest.find('"')?;
+                Some(pascal_to_snake(&rest[..end]))
+            })
+            .collect()
+    }
+
+    /// `ListLists` -> `list_lists`: the inverse of the UpperCamelCase the
+    /// `#[interface]` macro derives from a Rust method's own snake_case name
+    /// for the D-Bus wire format.
+    fn pascal_to_snake(name: &str) -> String {
+        let mut out = String::with_capacity(name.len() + 4);
+        for (i, ch) in name.char_indices() {
+            if ch.is_ascii_uppercase() {
+                if i > 0 {
+                    out.push('_');
+                }
+                out.extend(ch.to_lowercase());
+            } else {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    /// Call every operation `introspected_operations` names on `interface`,
+    /// in an order that satisfies each one's own data dependencies, planting
+    /// a distinct sentinel in each call that takes a content-bearing
+    /// argument. Returns every sentinel planted, so the caller can assert none of them
     /// reached a span field or an event.
     async fn run_dbus_content_leak_flow(interface: &TasksInterface) -> Vec<String> {
         let (conn, _peer) = test_connection().await;
@@ -992,31 +1011,34 @@ mod tests {
         sentinels
     }
 
-    /// Acceptance: every operation `DBUS_OPERATIONS` names can be called end
-    /// to end with a sentinel in its content-bearing argument, and none of
-    /// them ever reaches a `tasks_mcp.dbus.call` span field or any event
-    /// (lesson 8: table-driven over the whole operation list, not one
-    /// hand-picked operation). `record_dbus_call`'s own leak-safety is tested
-    /// generically above; this test guards the 14 call sites that use it.
+    /// Acceptance: every operation zbus's own introspection says this
+    /// interface exposes can be called end to end with a sentinel in its
+    /// content-bearing argument, and none of them ever reaches a
+    /// `tasks_mcp.dbus.call` span field or any event (lesson 8: table-driven
+    /// over the whole operation list, not one hand-picked operation).
+    /// `record_dbus_call`'s own leak-safety is tested generically above;
+    /// this test guards the 14 call sites that use it, and — because the
+    /// expected list is derived rather than hand-maintained — guards the
+    /// fifteenth call site nobody has written yet too.
     #[test]
     fn every_dbus_operation_is_exercised_without_leaking_content() {
         let (_dir, storage) = test_storage();
         let interface = TasksInterface::new(storage);
+        let expected = introspected_operations(&interface);
 
         let (spans, events, sentinels) =
             capture(|| async { run_dbus_content_leak_flow(&interface).await });
 
-        let exercised: std::collections::BTreeSet<&str> = spans
+        let exercised: std::collections::BTreeSet<String> = spans
             .iter()
             .filter(|s| s.name == "tasks_mcp.dbus.call")
-            .filter_map(|s| s.fields.get("operation").map(String::as_str))
+            .filter_map(|s| s.fields.get("operation").cloned())
             .collect();
-        let expected: std::collections::BTreeSet<&str> = DBUS_OPERATIONS.iter().copied().collect();
         assert_eq!(
             exercised,
             expected,
-            "every operation in DBUS_OPERATIONS must produce a tasks_mcp.dbus.call span; \
-             missing: {:?}, unexpected: {:?}",
+            "every operation zbus's introspection reports must produce a tasks_mcp.dbus.call \
+             span; missing: {:?}, unexpected: {:?}",
             expected.difference(&exercised).collect::<Vec<_>>(),
             exercised.difference(&expected).collect::<Vec<_>>()
         );

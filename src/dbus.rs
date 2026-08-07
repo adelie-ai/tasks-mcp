@@ -22,15 +22,11 @@
 #![deny(warnings)]
 
 use std::future::Future;
-// TODO(mcp-core#40, red commit): record_dbus_call does not record yet, so
-// this is temporarily unused. The green commit puts it back to work.
-#[allow(unused_imports)]
 use std::time::Instant;
 
 use mcp_core::telemetry::metrics::{self, Label};
 use serde_json::json;
 use thiserror::Error;
-#[allow(unused_imports)]
 use tracing::Instrument;
 use zbus::object_server::SignalEmitter;
 use zbus::{connection, fdo, interface};
@@ -70,9 +66,27 @@ async fn record_dbus_call<T>(
     operation: &'static str,
     fut: impl Future<Output = fdo::Result<T>>,
 ) -> fdo::Result<T> {
-    // TODO(mcp-core#40, red commit): no span, no counter, no histogram yet.
-    let _ = operation;
-    fut.await
+    let span = tracing::info_span!("tasks_mcp.dbus.call", operation);
+    async {
+        let started = Instant::now();
+        let result = fut.await;
+        let outcome: &'static str = if result.is_ok() { "ok" } else { "error" };
+        metrics::increment(
+            "tasks_mcp.dbus.call",
+            &[
+                Label::new("operation", operation),
+                Label::new("outcome", outcome),
+            ],
+        );
+        metrics::record_duration(
+            "tasks_mcp.dbus.call.duration",
+            started.elapsed(),
+            &[Label::new("operation", operation)],
+        );
+        result
+    }
+    .instrument(span)
+    .await
 }
 
 // ---- interface struct -------------------------------------------------------
@@ -370,8 +384,11 @@ impl DbusStartupError {
     /// has never heard of still falls into `SetupFailed`, the conservative
     /// "genuine failure" bucket, rather than failing to compile.
     fn classify(err: zbus::Error) -> Self {
-        // TODO(mcp-core#40, red commit): every reason folds into SetupFailed.
-        Self::SetupFailed(err)
+        match &err {
+            zbus::Error::InputOutput(_) => Self::NoSessionBus(err),
+            zbus::Error::NameTaken => Self::NameTaken(err),
+            _ => Self::SetupFailed(err),
+        }
     }
 
     /// The bounded `reason` label for the `tasks_mcp.dbus.startup_failure`
@@ -381,9 +398,11 @@ impl DbusStartupError {
     /// to this enum without extending this match is a compile error, so a
     /// new reason can never land uncounted.
     pub fn metric_reason(&self) -> &'static str {
-        // TODO(mcp-core#40, red commit): not yet distinct per variant.
-        let _ = self;
-        "setup_failed"
+        match self {
+            Self::NoSessionBus(_) => "no_session_bus",
+            Self::NameTaken(_) => "name_taken",
+            Self::SetupFailed(_) => "setup_failed",
+        }
     }
 }
 

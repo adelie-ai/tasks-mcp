@@ -40,8 +40,18 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // TODO(mcp-core#40, red commit): telemetry is not installed yet, so no
-    // subscriber exists and every `tracing` call in this process is a no-op.
+    // Telemetry: `mcp_core::run`/`run_simple` are the only place mcp-core
+    // installs the process subscriber, and this binary does not call either
+    // — it uses the lower-level `ServerCore` + `serve` API directly, because
+    // `build_service()` is also the construction path an in-process host
+    // shares (da#538), and D5 forbids a hosted library installing a global
+    // subscriber. A standalone binary is not that host, so it owns this
+    // itself. After argument parsing, so `--help`/`--version` install
+    // nothing; before any work, so a failure here is reported. The guard
+    // lives for the rest of `main` and flushes all three pipelines on drop
+    // (D6) — losing it would mean nothing exported on exit.
+    let _telemetry = mcp_core::telemetry::init(mcp_core::telemetry::Config::new("tasks-mcp"))
+        .map_err(|e| TaskMcpError::Internal(e.to_string()))?;
 
     match cli.command {
         Commands::Serve { common, no_dbus } => {
@@ -91,11 +101,9 @@ async fn main() -> Result<()> {
 /// Failing to claim the bus name, or any other setup failure, is a genuine
 /// failure an operator needs to see, so it goes to `error!`.
 fn log_dbus_startup_failure(err: &DbusStartupError) {
-    // TODO(mcp-core#40, red commit): everything logs at ERROR regardless of
-    // whether the condition was expected.
     match err {
         DbusStartupError::NoSessionBus(_) => {
-            tracing::error!(error = %err, "D-Bus service failed to start");
+            tracing::warn!(error = %err, "D-Bus service unavailable: no session bus");
         }
         DbusStartupError::NameTaken(_) | DbusStartupError::SetupFailed(_) => {
             tracing::error!(error = %err, "D-Bus service failed to start");

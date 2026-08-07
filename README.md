@@ -137,6 +137,27 @@ With no collector configured, the periodic metrics summary still writes to
 stderr, so a default-feature install from `cargo install` gets real numbers
 in the journal.
 
+### Stopping
+
+`SIGTERM` and `SIGINT` both stop the server cleanly: they end the serve loop,
+flush the telemetry guard (the final metrics summary reaches stderr), and
+exit 0. `SIGHUP` is not handled, so it keeps its default disposition.
+
+Open connections are cut rather than drained, and the stop adds no wait of
+its own beyond the flush -- bounded by the telemetry guard's five-second
+budget. `tasks-mcp`'s `main` wires this itself, because `build_service()` is
+also the construction path an in-process host shares (da#538), so this
+binary cannot use `mcp-core`'s `run`/`run_simple` (the entry point that
+installs this for the eleven other MCP servers in the fleet). The full
+mechanics -- why `SIGHUP` is refused, why open connections are cut, how long
+a stop takes, and why the process ends itself rather than returning -- are
+documented once in the [mcp-core
+README](https://github.com/adelie-ai/mcp-core#stopping-a-server).
+
+The D-Bus side channel is not part of this: only the `--transport stdio`
+serve loop races the stop signals. `tasks-mcp dbus` (D-Bus-only mode) keeps
+its prior behaviour.
+
 ## Development
 
 Run checks:

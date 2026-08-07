@@ -211,8 +211,7 @@ impl Probe {
             .stderr(Stdio::piped());
         let mut child = cmd.spawn().expect("the probe must start");
         let stdout = BufReader::new(child.stdout.take().expect("the probe has a piped stdout"));
-        let stderr =
-            StderrTail::attach(child.stderr.take().expect("the probe has a piped stderr"));
+        let stderr = StderrTail::attach(child.stderr.take().expect("the probe has a piped stderr"));
         Self {
             child,
             stdout,

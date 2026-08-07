@@ -47,14 +47,22 @@ async fn main() -> Result<()> {
     // shares (da#538), and D5 forbids a hosted library installing a global
     // subscriber. A standalone binary is not that host, so it owns this
     // itself. After argument parsing, so `--help`/`--version` install
-    // nothing; before any work, so a failure here is reported. The guard
-    // lives for the rest of `main` and flushes all three pipelines on drop
-    // (D6) — losing it would mean nothing exported on exit.
-    let _telemetry = mcp_core::telemetry::init(mcp_core::telemetry::Config::new("tasks-mcp"))
+    // nothing; before any work, so a failure here is reported. Held until the
+    // signal/served race in the `Serve` arm below (or for the rest of `main`
+    // on the `Dbus` arm, which does not race it): dropping it flushes all
+    // three pipelines (D6) — losing it would mean nothing exported on exit.
+    let telemetry = mcp_core::telemetry::init(mcp_core::telemetry::Config::new("tasks-mcp"))
         .map_err(|e| TaskMcpError::Internal(e.to_string()))?;
 
     match cli.command {
         Commands::Serve { common, no_dbus } => {
+            // Install before any of the setup below, so a signal that
+            // arrives while the service builds or the D-Bus side channel
+            // starts is remembered rather than fatal (mirrors
+            // mcp_core::run, which installs before its own `build`).
+            let mut stop = mcp_core::shutdown::StopSignals::install()
+                .map_err(|e| TaskMcpError::Internal(e.to_string()))?;
+
             // The MCP service is built through the shared zero-config
             // constructor so the binary and in-process hosts share one default
             // construction path (da#538). One Storage handle backs both the MCP
@@ -79,9 +87,24 @@ async fn main() -> Result<()> {
                 });
             }
 
-            mcp_core::serve(core, &common)
-                .await
-                .map_err(|e| TaskMcpError::Internal(e.to_string()))?;
+            // Race the serve loop against the two stop signals, `biased` so
+            // a serve loop that ends in the same poll as a signal still
+            // reports its own result rather than losing the race. On the
+            // client-ended-session path the guard drops as `return` unwinds
+            // this scope, the flush that has always worked.
+            //
+            // `flush_and_exit` never returns: it drops the guard by hand and
+            // ends the process itself, because a stdio server that returned
+            // normally instead would flush correctly and then hang forever
+            // on its own blocking stdin read (mcp-core#46).
+            let signal = tokio::select! {
+                biased;
+                result = mcp_core::serve(core, &common) => {
+                    return result.map_err(|e| TaskMcpError::Internal(e.to_string()));
+                }
+                signal = stop.recv() => signal,
+            };
+            mcp_core::shutdown::flush_and_exit(signal, telemetry);
         }
         Commands::Dbus => {
             let storage = Storage::new()?;

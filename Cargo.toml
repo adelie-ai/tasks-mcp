@@ -22,11 +22,25 @@ serde_yaml = "0.9"
 shellexpand = "3.1"
 thiserror = "2.0.17"
 tokio = { version = "1.48.0", features = ["full"] }
+# Structured diagnostics for the D-Bus side channel (adelie-ai/mcp-core#40):
+# the MCP surface's own spans, events and metrics come for free through
+# mcp-core's dispatch, but D-Bus calls bypass that dispatch entirely.
+tracing = "0.1.44"
 uuid = { version = "1", features = ["v4"] }
 zbus = { version = "5", features = ["tokio"] }
 
 [dev-dependencies]
 tempfile = "3.0"
+# A capturing `tracing` Layer for the telemetry content tests. Already in the
+# tree through adelie-telemetry (a regular, non-dev dependency of it), so this
+# adds no crate.
+tracing-subscriber = "0.3.23"
+
+[features]
+# Passthrough to mcp-core's OTLP export (adelie-ai/mcp-core#40). Off by
+# default: with it off, no opentelemetry crate is resolved and the console
+# layer plus the in-process metrics summary work unchanged.
+otel = ["mcp-core/otel"]
 
 [lints.rust]
 warnings = "deny"

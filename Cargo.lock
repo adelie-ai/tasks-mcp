@@ -1199,16 +1199,19 @@ dependencies = [
 [[package]]
 name = "mcp-core"
 version = "0.1.0"
-source = "git+https://github.com/adelie-ai/mcp-core#a89908ae60bb2685961a20126e0f19bd334c3654"
+source = "git+https://github.com/adelie-ai/mcp-core#188b22c5459a3e76f8dcd7a206bbff78df7643a2"
 dependencies = [
  "adelie-telemetry",
  "async-trait",
  "clap",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
 ]
 
 [[package]]
